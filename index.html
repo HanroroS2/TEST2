@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>데일리 리포트 생성기</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --bg: #0b0e17;
+  --surface: #131724;
+  --surface2: #1a1f30;
+  --border: #1e2438;
+  --border-hover: #2e3654;
+  --text: #b8c4de;
+  --text-dim: #5a6585;
+  --heading: #eef2ff;
+  --accent: #4b82ff;
+  --accent-bg: rgba(75,130,255,0.08);
+  --success: #34d399;
+  --success-bg: rgba(52,211,153,0.08);
+  --danger: #f87171;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans KR', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 48px 20px 80px;
+}
+.wrap { max-width: 820px; margin: 0 auto; }
+
+/* HEADER */
+.site-header { text-align: center; margin-bottom: 48px; }
+.site-header h1 { font-size: 20px; font-weight: 700; color: var(--heading); letter-spacing: -0.5px; }
+.site-header p { font-size: 12.5px; color: var(--text-dim); margin-top: 7px; }
+
+/* UPLOAD */
+.upload-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+.upload-zone {
+  background: var(--surface);
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  padding: 22px 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.upload-zone:hover { border-color: var(--accent); background: var(--accent-bg); }
+.upload-zone.ok { border-color: var(--success); border-style: solid; background: var(--success-bg); }
+.upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-zone .uicon { font-size: 26px; margin-bottom: 8px; }
+.upload-zone .ulabel { font-size: 12px; font-weight: 600; color: var(--heading); margin-bottom: 3px; }
+.upload-zone .uhint { font-size: 11px; color: var(--text-dim); }
+.upload-zone .ustatus { font-size: 11px; color: var(--success); margin-top: 8px; min-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* BUTTONS */
+.btn {
+  display: block; width: 100%; padding: 13px; border-radius: 10px;
+  font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; border: none;
+  transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #fff; margin-bottom: 40px; }
+.btn-primary:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; }
+.btn-primary:not(:disabled):hover { background: #5f8fff; transform: translateY(-1px); }
+.btn-outline {
+  background: var(--surface); color: var(--heading);
+  border: 1.5px solid var(--accent); margin-top: 24px;
+}
+.btn-outline:hover { background: var(--accent-bg); transform: translateY(-1px); }
+
+/* ERROR */
+.error-box {
+  background: rgba(248,113,113,0.08); border: 1px solid var(--danger);
+  border-radius: 8px; padding: 11px 14px; font-size: 12px; color: var(--danger);
+  margin-bottom: 16px; display: none;
+}
+
+/* REPORT SECTION */
+#report-section { display: none; }
+.report-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 22px; margin-bottom: 14px;
+}
+.block-title {
+  font-size: 12.5px; font-weight: 700; color: var(--heading);
+  padding-bottom: 12px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.report-text {
+  font-size: 12.5px; line-height: 1.9; color: var(--text);
+  white-space: pre-wrap; margin-bottom: 14px;
+}
+.report-text:last-child { margin-bottom: 0; }
+.action-label { font-size: 11px; font-weight: 500; color: var(--text-dim); margin-bottom: 6px; }
+.action-input {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: inherit; font-size: 12.5px;
+  padding: 9px 12px; resize: vertical; min-height: 56px; outline: none;
+  transition: border-color 0.2s;
+}
+.action-input:focus { border-color: var(--accent); }
+.action-input::placeholder { color: var(--text-dim); }
+.spacer { height: 14px; }
+
+@media(max-width:580px){ .upload-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="site-header">
+    <h1>데일리 리포트 생성기</h1>
+    <p>파일 3개를 업로드하면 자동으로 데일리 리포트를 작성합니다</p>
+  </header>
+
+  <div class="upload-grid">
+    <div class="upload-zone" id="zone-sa">
+      <input type="file" accept=".csv" onchange="handleFile('sa',this)">
+      <div class="uicon">📄</div>
+      <div class="ulabel">네이버 SA 보고서</div>
+      <div class="uhint">키워드 보고서 .csv</div>
+      <div class="ustatus" id="st-sa"></div>
+    </div>
+    <div class="upload-zone" id="zone-ad">
+      <input type="file" accept=".xlsx,.xls" onchange="handleFile('ad',this)">
+      <div class="uicon">📊</div>
+      <div class="ulabel">광고주 리포트</div>
+      <div class="uhint">매체 성과 .xlsx</div>
+      <div class="ustatus" id="st-ad"></div>
+    </div>
+    <div class="upload-zone" id="zone-ga">
+      <input type="file" accept=".xlsx,.xls" onchange="handleFile('ga',this)">
+      <div class="uicon">📈</div>
+      <div class="ulabel">GA 데이터</div>
+      <div class="uhint">구매·회원가입 .xlsx</div>
+      <div class="ustatus" id="st-ga"></div>
+    </div>
+  </div>
+
+  <div class="error-box" id="err"></div>
+  <button class="btn btn-primary" id="btn-gen" onclick="generate()" disabled>리포트 생성하기</button>
+
+  <div id="report-section">
+    <div class="report-block">
+      <div class="block-title">전체 (SA)</div>
+      <div class="report-text" id="tx-overall-review"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-overall" placeholder="액션 내용 (여러 줄 가능)"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-overall-ga"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">1. 네이버 SA</div>
+      <div class="report-text" id="tx-sa-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-sa" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-sa-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">2. 네이버 BS</div>
+      <div class="report-text" id="tx-bs-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-bs" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-bs-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">3. 구글 SA</div>
+      <div class="report-text" id="tx-gsa-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-gsa" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-gsa-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">4. 구글 PMAX</div>
+      <div class="report-text" id="tx-pmax-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-pmax" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-pmax-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">5. 네이버 SS</div>
+      <div class="report-text" id="tx-ss"></div>
+    </div>
+
+    <button class="btn btn-outline" onclick="downloadDocx()">📥 워드 파일 다운로드</button>
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────
+const fls = {};
+let RD = null; // reportData
+
+const DAYS = ['일','월','화','수','목','금','토'];
+const GA_KEY = {
+  '네이버 SA':'1. 네이버 SA','네이버 BS':'2. 네이버 BS',
+  '구글 SA':'4. 구글 SA','구글 PMAX':'5. 구글 PMAX','네이버 SS':'6. 네이버 SS'
+};
+
+// ── UI HELPERS ─────────────────────────────────────────────────────────
+function handleFile(type, inp) {
+  const file = inp.files[0]; if (!file) return;
+  fls[type] = file;
+  document.getElementById('zone-'+type).classList.add('ok');
+  document.getElementById('st-'+{sa:'sa',ad:'ad',ga:'ga'}[type]).textContent = '✓ ' + file.name;
+  document.getElementById('btn-gen').disabled = !(fls.sa && fls.ad && fls.ga);
+}
+function showErr(m){ const e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
+function hideErr(){ document.getElementById('err').style.display='none'; }
+
+// ── FORMAT HELPERS ─────────────────────────────────────────────────────
+const fmt = n => Math.round(n).toLocaleString('ko-KR');
+const pct = (p,c) => p ? Math.round((c-p)/Math.abs(p)*100) : 0;
+const arr = n => n>=0?'▲':'▼';
+const ap  = n => `${arr(n)}${Math.abs(n)}%`;
+const nW  = n => n===0?'전일과 동일':n>0?'증가':'감소'; // 숫자
+const pW  = n => n===0?'전일과 동일':n>0?'개선':'감소'; // %지표
+
+function excelDate(s){ return new Date(Math.round((s-25569)*864e5)); }
+function excelYMD(s){
+  const d=excelDate(s);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function dispDate(ymd){
+  const mo=parseInt(ymd.substring(4,6)), da=parseInt(ymd.substring(6,8));
+  const d=new Date(Date.UTC(parseInt(ymd.substring(0,4)),mo-1,da));
+  return `${mo}/${da}(${DAYS[d.getUTCDay()]})`;
+}
+
+// ── PARSERS ────────────────────────────────────────────────────────────
+function parseCSVLine(line){
+  const r=[]; let f='', q=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"') q=!q;
+    else if(c===','&&!q){ r.push(f); f=''; }
+    else f+=c;
+  }
+  r.push(f); return r;
+}
+
+function parseNaverSA(txt){
+  txt = txt.replace(/^\uFEFF/,'');
+  const lines = txt.split('\n');
+  const hdrs = parseCSVLine(lines[1]||'').map(h=>h.trim());
+  const idx = {}; hdrs.forEach((h,i)=>idx[h]=i);
+
+  const sa={}, ss={};
+  for(let i=2;i<lines.length;i++){
+    const v = parseCSVLine(lines[i].trim());
+    if(!v[0]) continue;
+    const date = (v[idx['일별']]||'').replace(/\./g,'').substring(0,8);
+    const type = (v[idx['캠페인유형']]||'').trim();
+    const grp  = (v[idx['광고그룹']]||'').trim();
+    const imp  = parseInt((v[idx['노출수']]||'0').replace(/,/g,''))||0;
+    const clk  = parseInt((v[idx['클릭수']]||'0').replace(/,/g,''))||0;
+    const cost = parseFloat((v[idx['총비용(VAT포함,원)']]||'0').replace(/,/g,''))||0;
+
+    let t=null;
+    if(type==='파워링크') t=sa;
+    else if(type==='쇼핑검색'&&grp.includes('자사몰')) t=ss;
+    if(t&&date.length===8){
+      if(!t[date]) t[date]={impressions:0,clicks:0,cost:0};
+      t[date].impressions+=imp; t[date].clicks+=clk; t[date].cost+=cost;
+    }
+  }
+  [sa,ss].forEach(d=>{ for(const k of Object.values(d)){
+    k.costVAT=k.cost/1.1;
+    k.ctr=k.clicks/k.impressions||0;
+    k.cpc=k.clicks?k.costVAT/k.clicks:0;
+  }});
+  return {sa,ss};
+}
+
+function parseAdReport(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:false});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const data={};
+  for(let i=2;i<rows.length;i++){
+    const r=rows[i];
+    const mRaw=String(r[1]||'').trim();
+    const dVal=r[2];
+    if(!mRaw||!dVal) continue;
+    const media=mRaw.replace(/\(.*?\)/g,'').trim();
+    const dSerial=parseFloat(dVal);
+    if(isNaN(dSerial)) continue;
+    const dk=excelYMD(dSerial);
+    if(!data[media]) data[media]={};
+    data[media][dk]={
+      impressions:parseInt(r[3])||0, clicks:parseInt(r[4])||0,
+      ctr:parseFloat(r[5])||0, cpc:parseFloat(r[6])||0,
+      cost:parseFloat(r[7])||0,
+      session:parseInt(r[17])||0, transaction:parseInt(r[18])||0,
+      cvr:parseFloat(r[19])||0, revenue:parseFloat(r[16])||0,
+      roas:parseFloat(r[22])||0
+    };
+  }
+  return data;
+}
+
+function parseGA(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:false});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const products={}, totalProd={}, signups={};
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i];
+    const pDate=String(r[4]||'').trim();
+    const gaKey=String(r[8]||'').trim();
+    const prod=String(r[9]||'').trim();
+    const buys=parseInt(r[6])||0;
+    if(pDate.length===8&&prod&&buys>0){
+      if(!products[gaKey]) products[gaKey]={};
+      if(!products[gaKey][pDate]) products[gaKey][pDate]={};
+      products[gaKey][pDate][prod]=(products[gaKey][pDate][prod]||0)+buys;
+      if(!totalProd[pDate]) totalProd[pDate]={};
+      totalProd[pDate][prod]=(totalProd[pDate][prod]||0)+buys;
+    }
+    const sDate=String(r[15]||'').trim();
+    const camp=String(r[18]||'').trim();
+    const scnt=parseInt(r[17])||0;
+    if(sDate.length===8&&camp&&scnt>0){
+      if(!signups[sDate]) signups[sDate]={};
+      signups[sDate][camp]=(signups[sDate][camp]||0)+scnt;
+    }
+  }
+  return {products,totalProd,signups};
+}
+
+// ── METRICS HELPERS ────────────────────────────────────────────────────
+const empty = ()=>({impressions:0,clicks:0,ctr:0,cpc:0,cost:0,costVAT:0,session:0,transaction:0,cvr:0,revenue:0,roas:0});
+
+function calcTotal(adData, date){
+  const t=empty();
+  for(const m of Object.values(adData)){
+    const d=m[date]; if(!d) continue;
+    t.impressions+=d.impressions; t.clicks+=d.clicks;
+    t.cost+=d.cost; t.session+=d.session;
+    t.transaction+=d.transaction; t.revenue+=d.revenue;
+  }
+  t.ctr=t.clicks/t.impressions||0; t.cpc=t.cost/t.clicks||0;
+  t.cvr=t.transaction/t.session||0; t.roas=t.revenue/t.cost||0;
+  return t;
+}
+
+function calcSignups(obj){
+  const r={total:0};
+  for(const [k,v] of Object.entries(obj)){
+    r.total+=v;
+    for(const [mn,gk] of Object.entries(GA_KEY)) if(k===gk){ r[mn]=(r[mn]||0)+v; }
+  }
+  return r;
+}
+
+function top3(products, gaKey, date){
+  const p=(products[gaKey]||{})[date]||{};
+  return Object.entries(p).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n])=>n);
+}
+
+function topOverall(totalProd, date){
+  const p=totalProd[date]||{};
+  return Object.entries(p).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([n,c])=>({n,c}));
+}
+
+// ── TEXT GENERATION ────────────────────────────────────────────────────
+function genOverallReview(p,c){
+  const coCh=pct(p.cost,c.cost), cpCh=pct(p.cpc,c.cpc);
+  const clCh=pct(p.clicks,c.clicks), imCh=pct(p.impressions,c.impressions);
+  const ctCh=pct(p.ctr,c.ctr);
+  let t=`리뷰&인사이트: 전일대비 광고비 ${ap(coCh)} 소폭 ${nW(coCh)}. `;
+  t+=`CPC ${ap(cpCh)} ${nW(cpCh)}하여 클릭 ${ap(clCh)} ${nW(clCh)}. `;
+  t+=`노출 ${nW(imCh)} 영향으로 CTR ${ap(ctCh)} ${pW(ctCh)}`;
+  return t;
+}
+
+function genOverallGA(tops){
+  if(!tops.length) return 'GA 기준 구매 데이터 없음';
+  const top=tops[0];
+  const rest=tops.slice(1).map(x=>x.n);
+  let t=`GA 기준 [${top.n}] 제품에서 구매 ${fmt(top.c)}건으로 우수하게 발생`;
+  if(rest.length) t+=`, 이외에는 [${rest.join(', ')} 등] 제품에서 구매 발생`;
+  return t;
+}
+
+function genReview1(csv_p, csv_c, ad_p, ad_c, isBS){
+  const impP=csv_p.impressions||ad_p.impressions, impC=csv_c.impressions||ad_c.impressions;
+  const clkP=csv_p.clicks||ad_p.clicks,           clkC=csv_c.clicks||ad_c.clicks;
+  const ctrP=csv_p.ctr||ad_p.ctr,                 ctrC=csv_c.ctr||ad_c.ctr;
+  const cpcP=Math.round(csv_p.cpc||ad_p.cpc),     cpcC=Math.round(csv_c.cpc||ad_c.cpc);
+  const coP= Math.round(csv_p.costVAT||ad_p.cost), coC=Math.round(csv_c.costVAT||ad_c.cost);
+
+  const coCh=pct(coP,coC), cpCh=pct(cpcP,cpcC);
+  const imCh=pct(impP,impC), clCh=pct(clkP,clkC), ctCh=pct(ctrP,ctrC);
+
+  let t='리뷰: ';
+  if(isBS)        t+=`전일대비 광고비 전일과 동일 집행. `;
+  else if(coCh===0) t+=`전일대비 광고비 전일과 동일. `;
+  else            t+=`전일대비 광고비 ${ap(coCh)} ${nW(coCh)} (${fmt(coP)}원 → ${fmt(coC)}원). `;
+
+  if(cpCh===0)    t+=`CPC 전일과 동일 (${fmt(cpcC)}원). `;
+  else            t+=`CPC ${fmt(cpcP)}원 → ${fmt(cpcC)}원으로 ${ap(cpCh)} ${nW(cpCh)}. `;
+
+  if(imCh<=0&&clCh<=0)      t+=`노출·클릭 ${Math.abs(imCh)<=5?'소폭 ':' '}감소`;
+  else if(imCh>=0&&clCh>=0) t+=`노출·클릭 동반 증가`;
+  else if(imCh>0&&clCh<0)   t+=`노출 증가하였으나 클릭 소폭 감소`;
+  else                      t+=`노출 감소 영향으로 클릭 소폭 감소`;
+
+  const ctrPs=(ctrP*100).toFixed(2), ctrCs=(ctrC*100).toFixed(2);
+  if(Math.abs(ctCh)<=2) t+=`하였으나 CTR은 전일과 유사한 ${ctrCs}%로 집행`;
+  else if(ctCh>0)        t+=`하였으나 CTR은 ${ctrPs}% → ${ctrCs}%로 ${ap(ctCh)} 개선`;
+  else                   t+=`하여 CTR은 ${ctrPs}% → ${ctrCs}%로 ${ap(ctCh)} 감소`;
+  return t;
+}
+
+function genReview2(p,c){
+  const sesCh=pct(p.session,c.session), trxCh=pct(p.transaction,c.transaction);
+  const cvrCh=pct(p.cvr,c.cvr), roasCh=pct(p.roas,c.roas);
+  let t;
+  if(sesCh<0&&trxCh<0)  t=`세션수·전환수 동반 감소하여 CVR ${ap(cvrCh)} ${pW(cvrCh)}, ROAS ${ap(roasCh)} ${pW(roasCh)}`;
+  else if(sesCh<0&&trxCh>=0) t=`세션수 감소했으나 전환수 ${ap(trxCh)} 증가하여 CVR ${ap(cvrCh)} ${pW(cvrCh)}, ROAS ${ap(roasCh)} ${pW(roasCh)}`;
+  else if(sesCh>=0&&trxCh>=0) t=`세션수·전환수 동반 증가하여 CVR ${ap(cvrCh)} ${pW(cvrCh)}, ROAS ${ap(roasCh)} ${pW(roasCh)}`;
+  else t=`세션수 증가했으나 전환수 ${ap(trxCh)} 감소하여 CVR ${ap(cvrCh)} ${pW(cvrCh)}, ROAS ${ap(roasCh)} ${pW(roasCh)}`;
+  return t;
+}
+
+function genGALine(prods, isSS, adP, adC){
+  if(isSS){
+    const diff=adC.transaction-adP.transaction;
+    const cvrCh=pct(adP.cvr,adC.cvr), roasCh=pct(adP.roas,adC.roas);
+    return `GA 기준 전환 ${adC.transaction}건으로 전일대비 ${Math.abs(diff)}건 ${nW(diff)}. CVR ${ap(cvrCh)} ${pW(cvrCh)}, ROAS ${ap(roasCh)} ${pW(roasCh)}`;
+  }
+  if(!prods||!prods.length) return 'GA 기준 구매 발생';
+  return `GA 기준 [${prods.join(', ')} 등] 제품에서 구매 발생`;
+}
+
+// ── BUILD REPORT DATA ──────────────────────────────────────────────────
+function buildRD(naverData, adData, gaData){
+  const allDates=new Set();
+  Object.values(adData).forEach(m=>Object.keys(m).forEach(d=>allDates.add(d)));
+  const dates=[...allDates].sort();
+  if(dates.length<2) throw new Error('날짜 데이터가 부족합니다 (2일치 필요)');
+  const [prev,curr]=dates.slice(-2);
+
+  const totP=calcTotal(adData,prev), totC=calcTotal(adData,curr);
+  const sigP=calcSignups(gaData.signups[prev]||{}), sigC=calcSignups(gaData.signups[curr]||{});
+  const tops=topOverall(gaData.totalProd,curr);
+
+  const mList=['네이버 SA','네이버 BS','구글 SA','구글 PMAX','네이버 SS'];
+  const media={};
+  for(const mn of mList){
+    const gk=GA_KEY[mn];
+    media[mn]={
+      adP:(adData[mn]||{})[prev]||empty(),
+      adC:(adData[mn]||{})[curr]||empty(),
+      csvP: mn==='네이버 SA'?(naverData.sa[prev]||empty()):mn==='네이버 SS'?(naverData.ss[prev]||empty()):empty(),
+      csvC: mn==='네이버 SA'?(naverData.sa[curr]||empty()):mn==='네이버 SS'?(naverData.ss[curr]||empty()):empty(),
+      sigP:sigP[mn]||0, sigC:sigC[mn]||0,
+      prods:top3(gaData.products,gk,curr),
+    };
+  }
+
+  return {prev,curr,dateDisp:dispDate(curr),totP,totC,sigP:sigP.total,sigC:sigC.total,tops,media};
+}
+
+// ── RENDER PREVIEW ─────────────────────────────────────────────────────
+function renderPreview(rd){
+  const {totP,totC,sigP,sigC,tops,media}=rd;
+  const sigCh=pct(sigP,sigC);
+  const cvrC=(totC.cvr*100).toFixed(2), cvrCh=pct(totP.cvr,totC.cvr);
+  const roasC=fmt(Math.round(totC.roas*100)), roasCh=pct(totP.roas,totC.roas);
+
+  document.getElementById('tx-overall-review').textContent=genOverallReview(totP,totC);
+  document.getElementById('tx-overall-ga').textContent=
+    genOverallGA(tops)+'\n\n'+
+    `회원가입 수 ${sigP}→${sigC}건으로 전일대비 ${ap(sigCh)} CVR ${cvrC}% (${ap(cvrCh)}), ROAS ${roasC}% (${ap(roasCh)})`;
+
+  const sections=[
+    {id:'sa',mn:'네이버 SA',isBS:false,isSS:false},
+    {id:'bs',mn:'네이버 BS',isBS:true, isSS:false},
+    {id:'gsa',mn:'구글 SA', isBS:false,isBS:false,isGSA:true},
+    {id:'pmax',mn:'구글 PMAX',isBS:false,isGSA:false},
+    {id:'ss', mn:'네이버 SS',isBS:false,isGSA:false,isSSec:true},
+  ];
+
+  for(const {id,mn,isBS,isSSec} of sections){
+    const m=media[mn];
+    const sCh=pct(m.sigP,m.sigC);
+    const cvrMC=(m.adC.cvr*100).toFixed(2), cvrMCh=pct(m.adP.cvr,m.adC.cvr);
+    const roasMC=fmt(Math.round(m.adC.roas*100)), roasMCh=pct(m.adP.roas,m.adC.roas);
+
+    document.getElementById(`tx-${id}-top`).textContent=
+      `회원가입 수 ${m.sigP}→${m.sigC}건으로 전일대비 ${ap(sCh)}\n\nCVR ${cvrMC}% (${ap(cvrMCh)}), ROAS ${roasMC}% (${ap(roasMCh)})`;
+
+    let after;
+    if(isSSec){
+      const impC=m.csvC.impressions||m.adC.impressions, clkC=m.csvC.clicks||m.adC.clicks;
+      const ctCh=pct(m.csvP.ctr||m.adP.ctr, m.csvC.ctr||m.adC.ctr);
+      after=`노출 ${fmt(impC)}건, 클릭 ${fmt(clkC)}건 발생. 전일대비 CTR ${ap(ctCh)} ${pW(ctCh)}\n\n`+
+            genGALine(null,true,m.adP,m.adC);
+    } else {
+      after=genReview1(m.csvP,m.csvC,m.adP,m.adC,isBS)+'\n\n'+
+            genReview2(m.adP,m.adC)+'\n\n'+
+            genGALine(m.prods,false,m.adP,m.adC);
+    }
+    document.getElementById(`tx-${id}-review`).textContent=after;
+  }
+}
+
+// ── MAIN GENERATE ──────────────────────────────────────────────────────
+async function generate(){
+  hideErr();
+  try{
+    const [saText,adBuf,gaBuf]=await Promise.all([
+      readF(fls.sa,'text'), readF(fls.ad,'ab'), readF(fls.ga,'ab')
+    ]);
+    const naverData=parseNaverSA(saText);
+    const adData=parseAdReport(new Uint8Array(adBuf));
+    const gaData=parseGA(new Uint8Array(gaBuf));
+    RD=buildRD(naverData,adData,gaData);
+    renderPreview(RD);
+    document.getElementById('report-section').style.display='block';
+    document.getElementById('report-section').scrollIntoView({behavior:'smooth'});
+  } catch(e){
+    showErr('오류: '+e.message);
+    console.error(e);
+  }
+}
+
+function readF(file,type){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=e=>res(e.target.result); r.onerror=rej;
+    if(type==='text') r.readAsText(file,'UTF-8');
+    else r.readAsArrayBuffer(file);
+  });
+}
+
+// ── DOCX GENERATION ───────────────────────────────────────────────────
+const RPR=`<w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕" w:cs="맑은 고딕"/><w:sz w:val="22"/><w:szCs w:val="22"/>`;
+const xe=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function xp(text){
+  return `<w:p><w:pPr><w:spacing w:after="160"/><w:rPr>${RPR}</w:rPr></w:pPr>`+
+         `<w:r><w:rPr>${RPR}</w:rPr><w:t xml:space="preserve">${xe(text)}</w:t></w:r></w:p>`;
+}
+function xpe(){ return `<w:p><w:pPr><w:spacing w:after="160"/><w:rPr>${RPR}</w:rPr></w:pPr></w:p>`; }
+function xpbr(parts){
+  const runs=parts.map((t,i)=>{
+    const br=i<parts.length-1?'<w:br/>':'';
+    return `<w:r><w:rPr>${RPR}</w:rPr><w:t xml:space="preserve">${xe(t)}</w:t>${br}</w:r>`;
+  }).join('');
+  return `<w:p><w:pPr><w:spacing w:after="160"/><w:rPr>${RPR}</w:rPr></w:pPr>${runs}</w:p>`;
+}
+function actionParas(text, prefix='액션: '){
+  const lines=(text||'').split('\n').map(l=>l.trim()).filter(l=>l);
+  if(!lines.length) return xp(prefix);
+  return xp(prefix+lines[0])+lines.slice(1).map(l=>xp(l)).join('');
+}
+
+function buildDocxBody(rd, actions){
+  const {totP,totC,sigP,sigC,tops,media,dateDisp}=rd;
+  const sigCh=pct(sigP,sigC);
+  const cvrC=(totC.cvr*100).toFixed(2), cvrCh=pct(totP.cvr,totC.cvr);
+  const roasC=fmt(Math.round(totC.roas*100)), roasCh=pct(totP.roas,totC.roas);
+
+  let b='';
+  // Overall
+  b+=xp(`[${dateDisp} GA4 업데이트 미완료]`);
+  b+=xpe();
+  b+=xp('SA');
+  b+=actionParas(actions.overall);
+  b+=xp(genOverallReview(totP,totC));
+  b+=xpbr([genOverallGA(tops),'']);
+  b+=xpbr([`회원가입 수 ${sigP}→${sigC}건으로 전일대비 ${ap(sigCh)} `,`CVR ${cvrC}% (${ap(cvrCh)}), ROAS ${roasC}% (${ap(roasCh)})`]);
+  b+=xpe();
+
+  const order=[
+    {key:'overall',mn:'네이버 SA',label:'1. 네이버 SA',isBS:false,isSSec:false,ac:'sa'},
+    {key:'bs',     mn:'네이버 BS',label:'2. 네이버 BS',isBS:true, isSSec:false,ac:'bs'},
+    {key:'gsa',    mn:'구글 SA',  label:'3. 구글 SA',  isBS:false,isSSec:false,ac:'gsa'},
+    {key:'pmax',   mn:'구글 PMAX',label:'4. 구글 PMAX',isBS:false,isSSec:false,ac:'pmax'},
+    {key:'ss',     mn:'네이버 SS',label:'5. 네이버 SS', isBS:false,isSSec:true, ac:null},
+  ];
+
+  for(const {mn,label,isBS,isSSec,ac} of order){
+    const m=media[mn];
+    const sCh=pct(m.sigP,m.sigC);
+    const cvrMC=(m.adC.cvr*100).toFixed(2), cvrMCh=pct(m.adP.cvr,m.adC.cvr);
+    const roasMC=fmt(Math.round(m.adC.roas*100)), roasMCh=pct(m.adP.roas,m.adC.roas);
+
+    b+=xp(label);
+    b+=xp(`회원가입 수 ${m.sigP}→${m.sigC}건으로 전일대비 ${ap(sCh)}`);
+    b+=xp(`CVR ${cvrMC}% (${ap(cvrMCh)}), ROAS ${roasMC}% (${ap(roasMCh)})`);
+
+    if(!isSSec){
+      b+=actionParas(actions[ac]);
+      b+=xp(genReview1(m.csvP,m.csvC,m.adP,m.adC,isBS));
+      b+=xpe();
+      b+=xp(genReview2(m.adP,m.adC));
+      b+=xpe();
+      b+=xp(genGALine(m.prods,false,m.adP,m.adC));
+    } else {
+      const impC=m.csvC.impressions||m.adC.impressions, clkC=m.csvC.clicks||m.adC.clicks;
+      const ctCh=pct(m.csvP.ctr||m.adP.ctr, m.csvC.ctr||m.adC.ctr);
+      b+=xp(`노출 ${fmt(impC)}건, 클릭 ${fmt(clkC)}건 발생. 전일대비 CTR ${ap(ctCh)} ${pW(ctCh)}`);
+      b+=xpe();
+      b+=xp(genGALine(null,true,m.adP,m.adC));
+    }
+    b+=xpe();
+  }
+  return b;
+}
+
+async function downloadDocx(){
+  if(!RD){ alert('먼저 리포트를 생성해주세요'); return; }
+  const actions={
+    overall:document.getElementById('ac-overall').value,
+    sa:document.getElementById('ac-sa').value,
+    bs:document.getElementById('ac-bs').value,
+    gsa:document.getElementById('ac-gsa').value,
+    pmax:document.getElementById('ac-pmax').value,
+  };
+
+  const body=buildDocxBody(RD,actions);
+  const docXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14 w15">
+<w:body>
+${body}
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>
+</w:body>
+</w:document>`;
+
+  const zip=new JSZip();
+  zip.file('[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`+
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n`+
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n`+
+    `<Default Extension="xml" ContentType="application/xml"/>\n`+
+    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>\n`+
+    `</Types>`);
+  zip.file('_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n`+
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>\n`+
+    `</Relationships>`);
+  zip.file('word/document.xml', docXml);
+  zip.file('word/_rels/document.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`);
+
+  const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const mo=RD.curr.substring(4,6), da=RD.curr.substring(6,8);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`데일리리포트_${mo}${da}.docx`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
