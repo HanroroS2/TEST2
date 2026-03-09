@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>데일리 리포트 생성기</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --bg: #0b0e17;
+  --surface: #131724;
+  --surface2: #1a1f30;
+  --border: #1e2438;
+  --border-hover: #2e3654;
+  --text: #b8c4de;
+  --text-dim: #5a6585;
+  --heading: #eef2ff;
+  --accent: #4b82ff;
+  --accent-bg: rgba(75,130,255,0.08);
+  --success: #34d399;
+  --success-bg: rgba(52,211,153,0.08);
+  --danger: #f87171;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans KR', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 48px 20px 80px;
+}
+.wrap { max-width: 820px; margin: 0 auto; }
+
+/* HEADER */
+.site-header { text-align: center; margin-bottom: 48px; }
+.site-header h1 { font-size: 20px; font-weight: 700; color: var(--heading); letter-spacing: -0.5px; }
+.site-header p { font-size: 12.5px; color: var(--text-dim); margin-top: 7px; }
+
+/* UPLOAD */
+.upload-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+.upload-zone {
+  background: var(--surface);
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  padding: 22px 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.upload-zone:hover { border-color: var(--accent); background: var(--accent-bg); }
+.upload-zone.ok { border-color: var(--success); border-style: solid; background: var(--success-bg); }
+.upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-zone .uicon { font-size: 26px; margin-bottom: 8px; }
+.upload-zone .ulabel { font-size: 12px; font-weight: 600; color: var(--heading); margin-bottom: 3px; }
+.upload-zone .uhint { font-size: 11px; color: var(--text-dim); }
+.upload-zone .ustatus { font-size: 11px; color: var(--success); margin-top: 8px; min-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* BUTTONS */
+.btn {
+  display: block; width: 100%; padding: 13px; border-radius: 10px;
+  font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; border: none;
+  transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #fff; margin-bottom: 40px; }
+.btn-primary:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; }
+.btn-primary:not(:disabled):hover { background: #5f8fff; transform: translateY(-1px); }
+.btn-outline {
+  background: var(--surface); color: var(--heading);
+  border: 1.5px solid var(--accent); margin-top: 24px;
+}
+.btn-outline:hover { background: var(--accent-bg); transform: translateY(-1px); }
+
+/* ERROR */
+.error-box {
+  background: rgba(248,113,113,0.08); border: 1px solid var(--danger);
+  border-radius: 8px; padding: 11px 14px; font-size: 12px; color: var(--danger);
+  margin-bottom: 16px; display: none;
+}
+
+/* REPORT SECTION */
+#report-section { display: none; }
+.report-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 22px; margin-bottom: 14px;
+}
+.block-title {
+  font-size: 12.5px; font-weight: 700; color: var(--heading);
+  padding-bottom: 12px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.report-text {
+  font-size: 12.5px; line-height: 1.9; color: var(--text);
+  white-space: pre-wrap; margin-bottom: 14px;
+}
+.report-text:last-child { margin-bottom: 0; }
+.action-label { font-size: 11px; font-weight: 500; color: var(--text-dim); margin-bottom: 6px; }
+.action-input {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: inherit; font-size: 12.5px;
+  padding: 9px 12px; resize: vertical; min-height: 56px; outline: none;
+  transition: border-color 0.2s;
+}
+.action-input:focus { border-color: var(--accent); }
+.action-input::placeholder { color: var(--text-dim); }
+.spacer { height: 0; }
+
+@media(max-width:580px){ .upload-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="site-header">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+    <h1 id="main-title">데일리 리포트 생성기 <span style="font-size:11px; color:#6b7280; font-weight:400; vertical-align:middle;">v1.6</span></h1>
+    <p id="main-subtitle">파일 3개를 업로드하면 자동으로 데일리 리포트를 작성합니다</p>
+    </div>
+    <button onclick="openHistory()" style="margin-top:4px; padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">📁 기록 보기</button>
+  </div>
+  </header>
+
+  <div id="date-bar" style="display:none; text-align:center; margin:-16px 0 24px; padding:10px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; font-size:13px;">
+    <span style="color:var(--text-dim)">집계 기간</span>
+    <span id="date-range" style="color:var(--heading); font-weight:600; margin-left:10px;"></span>
+  </div>
+  <!-- ── 설정 ── -->
+  <div style="margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+    <label style="font-size:12px; font-weight:600; color:var(--heading); white-space:nowrap;">👤 작성자</label>
+    <input id="nickname-input" type="text" placeholder="닉네임 입력 (필수)" maxlength="20"
+      style="flex:1; padding:9px 14px; border:1px solid var(--border); border-radius:8px; font-size:13px; background:var(--surface); color:var(--text);">
+    <span id="nickname-saved" style="font-size:11px; color:var(--success); display:none;">✓ 저장됨</span>
+  </div>
+
+
+  <!-- ── 모드 선택 ── -->
+  <div id="mode-selector" style="display:flex; gap:10px; margin-bottom:20px;">
+    <button id="btn-daily" onclick="setMode('daily')"
+      style="flex:1; padding:12px; border-radius:10px; border:2px solid var(--accent); background:var(--accent); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">
+      📅 일간 리포트
+    </button>
+    <button id="btn-weekly" onclick="setMode('weekly')"
+      style="flex:1; padding:12px; border-radius:10px; border:2px solid var(--border); background:var(--surface); color:var(--text-dim); font-size:14px; font-weight:600; cursor:pointer;">
+      📆 주간 리포트
+    </button>
+  </div>
+
+  <!-- 주간 날짜 범위 입력 -->
+  <div id="weekly-date-input" style="display:none; margin-bottom:16px;">
+    <div style="font-size:12px; font-weight:600; color:var(--heading); margin-bottom:8px;">📅 집계 기간 입력</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div>
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:4px;">전주</div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input id="prev-start" type="text" placeholder="2/23" maxlength="5"
+            style="width:70px; padding:7px 10px; border:1px solid var(--border); border-radius:7px; font-size:13px; background:var(--surface); color:var(--text); text-align:center;">
+          <span style="color:var(--text-dim);">~</span>
+          <input id="prev-end" type="text" placeholder="3/1" maxlength="5"
+            style="width:70px; padding:7px 10px; border:1px solid var(--border); border-radius:7px; font-size:13px; background:var(--surface); color:var(--text); text-align:center;">
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:4px;">금주</div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input id="curr-start" type="text" placeholder="3/2" maxlength="5"
+            style="width:70px; padding:7px 10px; border:1px solid var(--border); border-radius:7px; font-size:13px; background:var(--surface); color:var(--text); text-align:center;">
+          <span style="color:var(--text-dim);">~</span>
+          <input id="curr-end" type="text" placeholder="3/8" maxlength="5"
+            style="width:70px; padding:7px 10px; border:1px solid var(--border); border-radius:7px; font-size:13px; background:var(--surface); color:var(--text); text-align:center;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="date-warn" style="display:none; background:rgba(248,113,113,0.08); border:1px solid var(--danger); border-radius:8px; padding:11px 14px; font-size:12px; color:var(--danger); margin-bottom:16px; text-align:center;"></div>
+
+  <div class="upload-grid">
+    <div class="upload-zone" id="zone-sa">
+      <input type="file" accept=".csv" onchange="handleFile('sa',this)">
+      <div class="uicon">📄</div>
+      <div class="ulabel">네이버 SA 보고서</div>
+      <div class="uhint">키워드 보고서 .csv</div>
+      <div class="ustatus" id="st-sa"></div>
+    </div>
+    <div class="upload-zone" id="zone-ad">
+      <input type="file" accept=".xlsx,.xls" onchange="handleFile('ad',this)">
+      <div class="uicon">📊</div>
+      <div class="ulabel">광고주 리포트</div>
+      <div class="uhint">매체 성과 .xlsx</div>
+      <div class="ustatus" id="st-ad"></div>
+    </div>
+    <div class="upload-zone" id="zone-ga">
+      <input type="file" accept=".xlsx,.xls" onchange="handleFile('ga',this)">
+      <div class="uicon">📈</div>
+      <div class="ulabel">GA 데이터</div>
+      <div class="uhint">구매·회원가입 .xlsx</div>
+      <div class="ustatus" id="st-ga"></div>
+    </div>
+  </div>
+
+  <div class="error-box" id="err"></div>
+  <button class="btn btn-primary" id="btn-gen" onclick="generate()" disabled>리포트 생성하기</button>
+
+  <div id="report-section">
+    <div class="report-block">
+      <div class="block-title">전체 (SA)</div>
+      <div class="report-text" id="tx-overall-review"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-overall" placeholder="액션 내용 (여러 줄 가능)"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-overall-ga"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">1. 네이버 SA</div>
+      <div class="report-text" id="tx-sa-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-sa" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-sa-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">2. 네이버 BS</div>
+      <div class="report-text" id="tx-bs-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-bs" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-bs-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">3. 구글 SA</div>
+      <div class="report-text" id="tx-gsa-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-gsa" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-gsa-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">4. 구글 PMAX</div>
+      <div class="report-text" id="tx-pmax-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-pmax" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-pmax-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">5. 네이버 SS</div>
+      <div class="report-text" id="tx-ss-top"></div>
+      <div class="action-label">액션 입력</div>
+      <textarea class="action-input" id="ac-ss" placeholder="액션 내용"></textarea>
+      <div class="spacer"></div>
+      <div class="report-text" id="tx-ss-review"></div>
+    </div>
+
+    <div class="report-block">
+      <div class="block-title">6. 네이버 쇼핑검색</div>
+      <textarea class="action-input" id="ac-nss" placeholder="코멘트를 입력해주세요" style="min-height:100px;"></textarea>
+    </div>
+
+    <!-- ── 주간 하단 보고 ── -->
+    <div id="weekly-bottom" style="display:none;">
+      <div style="margin: 24px 0 12px; border-top:2px solid var(--accent);"></div>
+      <div class="report-block">
+        <div class="block-title">SA 전체</div>
+        <div class="report-text" id="tx-weekly-overall"></div>
+      </div>
+      <div class="report-block">
+        <div class="block-title">1. 네이버 SA</div>
+        <div class="report-text" id="tx-weekly-sa"></div>
+        <textarea class="action-input" id="ac-weekly-sa" placeholder="액션 (ㄴ 형식으로 입력)" style="min-height:70px;"></textarea>
+      </div>
+      <div class="report-block">
+        <div class="block-title">2. 네이버 BS</div>
+        <div class="report-text" id="tx-weekly-bs"></div>
+        <textarea class="action-input" id="ac-weekly-bs" placeholder="액션 (ㄴ 형식으로 입력)" style="min-height:70px;"></textarea>
+      </div>
+      <div class="report-block">
+        <div class="block-title">3. 구글 SA</div>
+        <div class="report-text" id="tx-weekly-gsa"></div>
+        <textarea class="action-input" id="ac-weekly-gsa" placeholder="액션 (ㄴ 형식으로 입력)" style="min-height:70px;"></textarea>
+      </div>
+      <div class="report-block">
+        <div class="block-title">4. 구글 PMAX</div>
+        <div class="report-text" id="tx-weekly-pmax"></div>
+        <textarea class="action-input" id="ac-weekly-pmax" placeholder="액션 (ㄴ 형식으로 입력)" style="min-height:70px;"></textarea>
+      </div>
+      <div class="report-block">
+        <div class="block-title">5. 네이버 SS</div>
+        <div class="report-text" id="tx-weekly-ss"></div>
+        <textarea class="action-input" id="ac-weekly-ss" placeholder="액션 (ㄴ 형식으로 입력)" style="min-height:70px;"></textarea>
+      </div>
+      <div class="report-block">
+        <div class="block-title">6. 쇼핑검색</div>
+        <div class="report-text" id="tx-weekly-nss"></div>
+        <textarea class="action-input" id="ac-weekly-nss" placeholder="액션 (ㄴ 형식으로 입력)" style="min-height:70px;"></textarea>
+      </div>
+    </div>
+
+    <button class="btn btn-outline" onclick="downloadDocx()">📥 워드 파일 다운로드</button>
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────
+const fls = {};
+let RD = null; // reportData
+
+const DAYS = ['일','월','화','수','목','금','토'];
+// ── 모드 ─────────────────────────────────────────────────
+let REPORT_MODE = 'daily'; // 'daily' | 'weekly'
+
+function setMode(mode){
+  REPORT_MODE = mode;
+  const isW = mode==='weekly';
+  // 버튼 스타일
+  document.getElementById('btn-daily').style.background  = isW ? 'var(--surface)' : 'var(--accent)';
+  document.getElementById('btn-daily').style.color       = isW ? 'var(--text-dim)' : '#fff';
+  document.getElementById('btn-daily').style.borderColor = isW ? 'var(--border)'   : 'var(--accent)';
+  document.getElementById('btn-weekly').style.background  = isW ? 'var(--accent)' : 'var(--surface)';
+  document.getElementById('btn-weekly').style.color       = isW ? '#fff'           : 'var(--text-dim)';
+  document.getElementById('btn-weekly').style.borderColor = isW ? 'var(--accent)'  : 'var(--border)';
+  // 타이틀
+  document.getElementById('main-title').childNodes[0].textContent = isW ? '주간 리포트 생성기 ' : '데일리 리포트 생성기 ';
+  document.getElementById('weekly-date-input').style.display = isW ? 'block' : 'none';
+  if(isW) autoFillWeeklyDates();
+  document.getElementById('main-subtitle').textContent = isW
+    ? '파일 3개를 업로드하면 자동으로 주간 리포트를 작성합니다'
+    : '파일 3개를 업로드하면 자동으로 데일리 리포트를 작성합니다';
+}
+
+// 주간 날짜 자동 계산
+function autoFillWeeklyDates(){
+  const today = new Date();
+  const dow = today.getDay(); // 0=일, 1=월 ... 6=토
+  // 이번 주 월요일 (한국 기준 월~일)
+  const diffToMon = (dow === 0) ? -6 : 1 - dow;
+  const thisMon = new Date(today); thisMon.setDate(today.getDate() + diffToMon);
+  // 금주 입력란 = 전주 (이번 주 -7일)
+  const currMon = new Date(thisMon); currMon.setDate(thisMon.getDate() - 7);
+  const currSun = new Date(currMon); currSun.setDate(currMon.getDate() + 6);
+  // 전주 입력란 = 전전주 (이번 주 -14일)
+  const prevMon = new Date(thisMon); prevMon.setDate(thisMon.getDate() - 14);
+  const prevSun = new Date(prevMon); prevSun.setDate(prevMon.getDate() + 6);
+
+  const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
+
+  document.getElementById('prev-start').value = fmt(prevMon);
+  document.getElementById('prev-end').value   = fmt(prevSun);
+  document.getElementById('curr-start').value = fmt(currMon);
+  document.getElementById('curr-end').value   = fmt(currSun);
+  updateDateBar();
+}
+
+// "전일" vs "전주" 헬퍼
+const prevStr  = () => REPORT_MODE==='weekly' ? '전주' : '전일';
+const prevComp = () => REPORT_MODE==='weekly' ? '전주대비' : '전일대비';
+
+const GA_KEY = {
+  '네이버 SA':'네이버 SA','네이버 BS':'네이버 BS',
+  '구글 SA':'구글 SA','구글 PMAX':'구글 PMAX','네이버 SS':'네이버 SS'
+};
+
+// ── UI HELPERS ─────────────────────────────────────────────────────────
+const fileDates = {}; // {sa:[prev,curr], ad:[prev,curr], ga:[prev,curr]}
+
+function handleFile(type, inp) {
+  const file = inp.files[0]; if (!file) return;
+  fls[type] = file;
+  document.getElementById('zone-'+type).classList.add('ok');
+  document.getElementById('st-'+{sa:'sa',ad:'ad',ga:'ga'}[type]).textContent = '✓ ' + file.name;
+  // 파일 읽어서 날짜 추출
+  readFileDates(type, file).then(() => updateDateBar());
+  document.getElementById('btn-gen').disabled = !(fls.sa && fls.ad && fls.ga);
+  updateDateBar();
+}
+
+async function readFileDates(type, file) {
+  try {
+    if (type === 'sa') {
+      const txt = await readF(file, 'text');
+      const clean = txt.replace(/^\uFEFF/, '');
+      const lines = clean.split('\n');
+      const hdrs = lines[1].split(',').map(h => h.trim().replace(/"/g,''));
+      const dateIdx = hdrs.indexOf('일별');
+      const dates = new Set();
+      for (let i = 2; i < lines.length; i++) {
+        const v = lines[i].split(',');
+        const d = (v[dateIdx] || '').replace(/\./g,'').substring(0,8);
+        if (d.length === 8) dates.add(d);
+      }
+      fileDates.sa = [...dates].sort();
+    } else if (type === 'ad') {
+      const buf = await readF(file, 'ab');
+      const wb = XLSX.read(new Uint8Array(buf), {type:'array',cellDates:false});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const dates = new Set();
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let row = 2; row <= range.e.r; row++) {
+        const cell = ws[XLSX.utils.encode_cell({r: row, c: 2})];
+        if (cell) {
+          if (typeof cell.v === 'number' && cell.v > 40000) {
+            dates.add(excelYMD(cell.v));          // 데일리: 날짜 시리얼
+          } else if (typeof cell.v === 'string' && cell.v.trim()) {
+            dates.add(cell.v.trim());             // 주간: "2월4주차" 텍스트
+          }
+        }
+      }
+      fileDates.ad = [...dates].sort();
+    } else if (type === 'ga') {
+      const buf = await readF(file, 'ab');
+      const wb = XLSX.read(new Uint8Array(buf), {type:'array',cellDates:false});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      const dates = new Set();
+      const isWeekly = REPORT_MODE==='weekly';
+      for (let i = 1; i < rows.length; i++) {
+        if(isWeekly){
+          const w = String(rows[i][8]||'').trim(); // 주차
+          if(w) dates.add(w);
+        } else {
+          const e = String(rows[i][4]||'').trim(); // E열: 구매 날짜
+          if(e.length===8) dates.add(e);
+        }
+      }
+      fileDates.ga = [...dates].sort((a,b)=>Number(a)-Number(b));
+    }
+  } catch(e) { console.warn('날짜 파싱 오류:', e); }
+}
+
+function updateDateBar() {
+  const bar = document.getElementById('date-bar');
+  const warn = document.getElementById('date-warn');
+  const loaded = Object.keys(fileDates);
+  if (!loaded.length) return;
+
+  // 각 파일의 최신 2일 추출
+  const getPrevCurr = arr => arr && arr.length >= 2 ? [arr[arr.length-2], arr[arr.length-1]] : arr;
+  const sa = getPrevCurr(fileDates.sa);
+  const ad = getPrevCurr(fileDates.ad);
+  const ga = getPrevCurr(fileDates.ga);
+
+  const isWeekly = REPORT_MODE === 'weekly';
+
+  // 날짜 표시
+  const currSA = sa ? sa[sa.length-1] : null;
+  const currAD = ad ? ad[ad.length-1] : null;
+  const prevAD = ad && ad.length>=2 ? ad[ad.length-2] : null;
+  const prevSA = sa && sa.length>=2 ? sa[sa.length-2] : null;
+
+  if(isWeekly){
+    // 주간: "N월N주차(M/D~M/D) → N월N주차(M/D~M/D)" 형식
+    // 직접 입력한 날짜 범위 사용
+    const pStart = (document.getElementById('prev-start')?.value||'').trim();
+    const pEnd   = (document.getElementById('prev-end')?.value||'').trim();
+    const cStart = (document.getElementById('curr-start')?.value||'').trim();
+    const cEnd   = (document.getElementById('curr-end')?.value||'').trim();
+
+    const prevRange = (pStart && pEnd) ? `(${pStart}~${pEnd})` : '';
+    const currRange = (cStart && cEnd) ? `(${cStart}~${cEnd})` : '';
+
+    const prevLabel = (prevAD||'') + prevRange;
+    const currLabel = (currAD||'') + currRange;
+
+    if(prevLabel || currLabel){
+      document.getElementById('date-range').textContent = prevLabel + '  →  ' + currLabel;
+      bar.style.display = 'block';
+    }
+    warn.style.display = 'none';
+  } else {
+    // 데일리: SA 기준 날짜 표시
+    const basePrev = prevSA || prevAD;
+    const baseCurr = currSA || currAD;
+    if (basePrev && baseCurr) {
+      document.getElementById('date-range').textContent = dispDate(basePrev) + '  →  ' + dispDate(baseCurr);
+      bar.style.display = 'block';
+    }
+    // 날짜 불일치 경고
+    if (currSA && currAD) {
+      if (currSA !== currAD) {
+        warn.textContent = `⚠️ 네이버SA(${dispDate(currSA)})와 광고주 리포트(${dispDate(currAD)}) 날짜가 다릅니다`;
+        warn.style.display = 'block';
+      } else {
+        warn.style.display = 'none';
+      }
+    }
+  }
+}
+function showErr(m){ const e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
+function hideErr(){ document.getElementById('err').style.display='none'; }
+
+// ── FORMAT HELPERS ─────────────────────────────────────────────────────
+const fmt = n => Math.round(n).toLocaleString('ko-KR');
+const pct = (p,c) => (p && isFinite(p) && isFinite(c)) ? Math.round((c-p)/Math.abs(p)*100) : 0;
+const arr = n => n>=0?'▲':'▼';
+const ap  = n => `${arr(n)}${Math.abs(n)}%`;
+const pct_str = n => `${Math.abs(n)}%`; // 화살표 없는 증감 (리뷰용)
+const nW  = n => n===0?prevStr()+'과 동일':n>0?'증가':'감소'; // 숫자
+// 값 비교 헬퍼: exact같으면 동일, %=0이면 유사, 아니면 증감
+const cmpN = (p, c, unit='') => {
+  if(p===c) return prevStr()+'과 동일';
+  const ch = pct(p,c);
+  if(ch===0) return '유사한 수준';
+  return `${pct_str(ch)} ${nW(ch)}`;
+};
+const pW  = n => n===0?prevStr()+'과 동일':n>0?'개선':'감소'; // %지표
+
+function excelDate(s){ return new Date(Math.round((s-25569)*864e5)); }
+function excelYMD(s){
+  const d=excelDate(s);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function dispDate(ymd){
+  const mo=parseInt(ymd.substring(4,6)), da=parseInt(ymd.substring(6,8));
+  const d=new Date(Date.UTC(parseInt(ymd.substring(0,4)),mo-1,da));
+  return `${mo}/${da}(${DAYS[d.getUTCDay()]})`;
+}
+
+// ── PARSERS ────────────────────────────────────────────────────────────
+function parseCSVLine(line){
+  const r=[]; let f='', q=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"') q=!q;
+    else if(c===','&&!q){ r.push(f); f=''; }
+    else f+=c;
+  }
+  r.push(f); return r;
+}
+
+function parseNaverSA(txt){
+  txt = txt.replace(/^\uFEFF/,'');
+  const lines = txt.split('\n');
+  const hdrs = parseCSVLine(lines[1]||'').map(h=>h.trim());
+  const idx = {}; hdrs.forEach((h,i)=>idx[h]=i);
+
+  const sa={}, ss={};
+  for(let i=2;i<lines.length;i++){
+    const v = parseCSVLine(lines[i].trim());
+    if(!v[0]) continue;
+    const date = (v[idx['일별']]||'').replace(/\./g,'').substring(0,8);
+    const type = (v[idx['캠페인유형']]||'').trim();
+    const grp  = (v[idx['광고그룹']]||'').trim();
+    const imp  = parseInt((v[idx['노출수']]||'0').replace(/,/g,''))||0;
+    const clk  = parseInt((v[idx['클릭수']]||'0').replace(/,/g,''))||0;
+    const cost = parseFloat((v[idx['총비용(VAT포함,원)']]||'0').replace(/,/g,''))||0;
+
+    let t=null;
+    if(type==='파워링크') t=sa;
+    else if(type==='쇼핑검색'&&grp.includes('자사몰')) t=ss;
+    if(t&&date.length===8){
+      if(!t[date]) t[date]={impressions:0,clicks:0,cost:0};
+      t[date].impressions+=imp; t[date].clicks+=clk; t[date].cost+=cost;
+    }
+  }
+  [sa,ss].forEach(d=>{ for(const k of Object.values(d)){
+    k.costVAT=k.cost/1.1;
+    k.ctr=k.clicks/k.impressions||0;
+    k.cpc=k.clicks?k.costVAT/k.clicks:0;
+  }});
+  return {sa,ss};
+}
+
+function parseAdReport(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:false});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const range=XLSX.utils.decode_range(ws['!ref']||'A1');
+  const sc=range.s.c; // 시작 열 (B=1, 0-based)
+  const data={};
+  const getV=(r,c)=>{ const cell=ws[XLSX.utils.encode_cell({r,c})]; return cell?cell.v:null; };
+  const num=(r,c)=>{ const v=getV(r,c); return (v!==null&&v!==''&&!isNaN(v))?parseFloat(v):0; };
+
+  // range.s.r = 헤더행, range.s.r+1부터 데이터
+  // 절대 열 인덱스(0-based): A=0, B=1, C=2, D=3 ... R=17, S=18, T=19, W=22
+  for(let r=range.s.r+1; r<=range.e.r; r++){
+    const mRaw=String(getV(r,1)||'').trim();  // B(1): 매체
+    if(!mRaw) continue;
+    const media=mRaw.replace(/\(.*?\)/g,'').trim();
+    const dateV=getV(r,2);                   // C(2): 날짜 or 주차 텍스트
+    let dk;
+    if(typeof dateV==='number' && dateV>40000){
+      dk=excelYMD(dateV);                    // 데일리: 날짜 시리얼 → YYYYMMDD
+    } else if(typeof dateV==='string' && dateV.trim()){
+      dk=dateV.trim();                       // 주간: "2월4주차" 등 텍스트 그대로 키로 사용
+    } else {
+      continue;
+    }
+    if(!data[media]) data[media]={};
+    data[media][dk]={
+      impressions : Math.round(num(r, 3)),   // D(3): 노출수
+      clicks      : Math.round(num(r, 4)),   // E(4): 클릭수
+      ctr         : num(r, 5),               // F(5): CTR
+      cpc         : num(r, 6),               // G(6): CPC
+      cost        : num(r, 7),               // H(7): 광고비(VAT미포함)
+      revenue     : num(r, 16),              // Q(16): Revenue(GA)
+      session     : Math.round(num(r, 17)), // R(17): Session(GA)
+      transaction : Math.round(num(r, 18)), // S(18): Transaction(GA)
+      cvr         : num(r, 19),              // T(19): CVR(GA)
+      roas        : num(r, 22),              // W(22): ROAS(GA)
+    };
+  }
+  return data;
+}
+
+function parseGA(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:false});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const products={}, totalProd={}, signups={};
+  const isWeekly = REPORT_MODE==='weekly';
+
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i];
+
+    if(isWeekly){
+      // ── 주간 구매: 주차 기준 집계 ──────────────────
+      // [6]=구매수, [8]=주차, [10]=캠페인함수, [11]=제품함수
+      const week=String(r[8]||'').trim();
+      const gaKeyRaw=String(r[10]||'').trim();
+      const gaKey=gaKeyRaw.replace(/^\d+\.\s*/,'').trim(); // 번호 제거 → "네이버 SS"
+      const prod=String(r[11]||'').trim();
+      const buys=parseInt(r[6])||0;
+      if(week&&prod&&buys>0&&gaKey){
+        if(!products[gaKey]) products[gaKey]={};
+        if(!products[gaKey][week]) products[gaKey][week]={};
+        products[gaKey][week][prod]=(products[gaKey][week][prod]||0)+buys;
+        if(!totalProd[week]) totalProd[week]={};
+        totalProd[week][prod]=(totalProd[week][prod]||0)+buys;
+      }
+      // ── 주간 회원가입: [19]=이벤트수, [20]=주차, [22]=캠페인함수 ──
+      const weekS=String(r[20]||'').trim();
+      const camp=String(r[22]||'').trim();
+      const scnt=parseInt(r[19])||0;
+      if(weekS&&camp&&scnt>0){
+        if(!signups[weekS]) signups[weekS]={};
+        signups[weekS][camp]=(signups[weekS][camp]||0)+scnt;
+      }
+    } else {
+      // ── 데일리 구매: 날짜 기준 집계 ──────────────────
+      // [4]=날짜, [8]=캠페인함수, [9]=제품함수, [6]=구매수
+      const pDate=String(r[4]||'').trim();
+      const gaKeyRaw=String(r[8]||'').trim();
+      const gaKey=gaKeyRaw.replace(/^\d+\.\s*/,'').trim(); // 번호 제거
+      const prod=String(r[9]||'').trim();
+      const buys=parseInt(r[6])||0;
+      if(pDate.length===8&&prod&&buys>0&&gaKey){
+        if(!products[gaKey]) products[gaKey]={};
+        if(!products[gaKey][pDate]) products[gaKey][pDate]={};
+        products[gaKey][pDate][prod]=(products[gaKey][pDate][prod]||0)+buys;
+        if(!totalProd[pDate]) totalProd[pDate]={};
+        totalProd[pDate][prod]=(totalProd[pDate][prod]||0)+buys;
+      }
+      // ── 데일리 회원가입: [15]=날짜, [17]=이벤트수, [18]=캠페인함수 ──
+      const sDate=String(r[15]||'').trim();
+      const camp=String(r[18]||'').trim();
+      const scnt=parseInt(r[17])||0;
+      if(sDate.length===8&&camp&&scnt>0){
+        if(!signups[sDate]) signups[sDate]={};
+        signups[sDate][camp]=(signups[sDate][camp]||0)+scnt;
+      }
+    }
+  }
+
+  // 날짜/주차 목록 추출 (구매 기준)
+  const gaDatesSorted = Object.keys(totalProd).sort((a,b)=>Number(a)-Number(b));
+  return {products, totalProd, signups, dates: gaDatesSorted};
+}
+
+// ── METRICS HELPERS ────────────────────────────────────────────────────
+const empty = ()=>({impressions:0,clicks:0,ctr:0,cpc:0,cost:0,costVAT:0,session:0,transaction:0,cvr:0,revenue:0,roas:0});
+
+function calcTotal(adData, date){
+  const t=empty();
+  for(const m of Object.values(adData)){
+    const d=m[date]; if(!d) continue;
+    t.impressions+=d.impressions; t.clicks+=d.clicks;
+    t.cost+=d.cost; t.session+=d.session;
+    t.transaction+=d.transaction; t.revenue+=d.revenue;
+  }
+  t.ctr=(t.impressions?t.clicks/t.impressions:0); t.cpc=(t.clicks?t.cost/t.clicks:0);
+  t.cvr=t.transaction/t.session||0; t.roas=t.revenue/t.cost||0;
+  return t;
+}
+
+function calcSignups(obj){
+  const r={total:0};
+  for(const [k,v] of Object.entries(obj)){
+    r.total+=v;
+    // 번호(숫자. 접두사) 제거 후 이름만 비교: "3. 네이버 SS" → "네이버 SS"
+    const kName = k.replace(/^\d+\.\s*/, '').trim();
+    for(const mn of Object.keys(GA_KEY)){
+      if(kName === mn){ r[mn]=(r[mn]||0)+v; }
+    }
+  }
+  return r;
+}
+
+function top3(products, gaKey, date){
+  const p=(products[gaKey]||{})[date]||{};
+  const all=Object.entries(p).sort((a,b)=>b[1]-a[1]);
+  const hasMore=all.length>3;
+  return {names:all.slice(0,3).map(([n])=>n), hasMore};
+}
+
+function topOverall(totalProd, date){
+  const p=totalProd[date]||{};
+  return Object.entries(p).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([n,c])=>({n,c}));
+}
+
+// ── TEXT GENERATION ────────────────────────────────────────────────────
+function genOverallReview(p,c){
+  const coCh=pct(p.cost,c.cost), cpCh=pct(p.cpc,c.cpc);
+  const clCh=pct(p.clicks,c.clicks), imCh=pct(p.impressions,c.impressions);
+  const ctCh=pct(p.ctr,c.ctr);
+  let costStr;
+  if(p.cost===c.cost)   costStr=`광고비 ${prevStr()}과 동일`;
+  else if(coCh===0)     costStr='광고비 유사한 수준으로 집행';
+  else                  costStr=`광고비 ${pct_str(coCh)} ${nW(coCh)}`;
+  let t=`리뷰&인사이트: ${prevComp()} ${costStr}. `;
+  t+=`CPC ${pct_str(cpCh)} ${nW(cpCh)}하여 클릭 ${pct_str(clCh)} ${nW(clCh)}. `;
+  t+=`노출 ${nW(imCh)} 영향으로 CTR ${pct_str(ctCh)} ${pW(ctCh)}`;
+  return t;
+}
+
+function genOverallGA(tops){
+  if(!tops.length) return 'GA 기준 구매 데이터 없음';
+  const top=tops[0];
+  const rest=tops.slice(1).map(x=>x.n);
+  let t=`GA 기준 [${top.n}] 제품에서 구매 ${fmt(top.c)}건으로 우수하게 발생`;
+  if(rest.length) t+=`, 이외에는 [${rest.join(', ')} 등] 제품에서 구매 발생`;
+  return t;
+}
+
+function genReview1(csv_p, csv_c, ad_p, ad_c, isBS){
+  const impP=csv_p.impressions||ad_p.impressions, impC=csv_c.impressions||ad_c.impressions;
+  const clkP=csv_p.clicks||ad_p.clicks,           clkC=csv_c.clicks||ad_c.clicks;
+  const ctrP=csv_p.ctr||ad_p.ctr,                 ctrC=csv_c.ctr||ad_c.ctr;
+  const cpcP=Math.round(csv_p.cpc||ad_p.cpc),     cpcC=Math.round(csv_c.cpc||ad_c.cpc);
+  const coP= Math.round(csv_p.costVAT||ad_p.cost), coC=Math.round(csv_c.costVAT||ad_c.cost);
+
+  const coCh=pct(coP,coC), cpCh=pct(cpcP,cpcC);
+  const imCh=pct(impP,impC), clCh=pct(clkP,clkC), ctCh=pct(ctrP,ctrC);
+
+  let t='리뷰: '+prevComp()+' ';
+  if(isBS){
+    // 브랜드검색: 반올림 % 변동 있을 때만 광고비 코멘트
+    if(coCh!==0){
+      const coExpr = coP===coC ? '유사한 수준으로 집행' : `${pct_str(coCh)} ${nW(coCh)}`;
+      t+=`광고비 ${coExpr}. `;
+    }
+  } else {
+    if(coP===coC)       t+=`광고비 ${prevStr()}과 동일. `;
+    else if(coCh===0)   t+=`광고비 유사한 수준으로 집행. `;
+    else                t+=`광고비 ${pct_str(coCh)} ${nW(coCh)}. `;
+  }
+
+  if(cpcP===cpcC)     t+=`CPC ${prevStr()}과 동일 (${fmt(cpcC)}원). `;
+  else if(cpCh===0)   t+=`CPC 유사한 수준 (${fmt(cpcP)}원 → ${fmt(cpcC)}원). `;
+  else                t+=`CPC ${fmt(cpcP)}원 → ${fmt(cpcC)}원으로 ${pct_str(cpCh)} ${nW(cpCh)}. `;
+
+  // 노출·클릭 방향
+  let clkDir;
+  if(imCh<=0&&clCh<=0)    clkDir='down';   // 동반 감소
+  else if(imCh>=0&&clCh>=0) clkDir='up';   // 동반 증가
+  else if(imCh>0&&clCh<0)   clkDir='split_up';  // 노출↑ 클릭↓
+  else                        clkDir='split_down'; // 노출↓ 클릭↓(노출감소로)
+
+  const sopoClk = (Math.abs(imCh)<=2&&Math.abs(clCh)<=2)?' 소폭':'';
+  const sopoClkSingle = Math.abs(clCh)<=2?' 소폭':'';
+
+  // CTR 방향
+  const ctrSame = Math.abs(ctCh)<=2;
+  const ctrUp   = ctCh>0;
+
+  if(clkDir==='up'){
+    if(ctrSame)   t+=`노출·클릭 동반 증가하였으나 CTR은 ${prevStr()}과 유사한 수준으로 집행`;
+    else if(ctrUp) t+=`노출·클릭 동반 증가하여 CTR은 ${pct_str(ctCh)} 개선`;
+    else           t+=`노출·클릭 동반 증가하였으나 CTR은 ${pct_str(ctCh)} 감소`;
+  } else if(clkDir==='down'){
+    if(ctrSame)   t+=`노출·클릭${sopoClk} 감소하였으나 CTR은 ${prevStr()}과 유사한 수준으로 집행`;
+    else if(ctrUp) t+=`노출·클릭${sopoClk} 감소하였으나 CTR은 ${pct_str(ctCh)} 개선`;
+    else           t+=`노출·클릭${sopoClk} 감소하여 CTR은 ${pct_str(ctCh)} 감소`;
+  } else if(clkDir==='split_up'){
+    if(ctrSame)   t+=`노출 증가하였으나 클릭${sopoClkSingle} 감소하여 CTR은 ${prevStr()}과 유사한 수준으로 집행`;
+    else if(ctrUp) t+=`노출 증가하였으나 클릭${sopoClkSingle} 감소, CTR은 ${pct_str(ctCh)} 개선`;
+    else           t+=`노출 증가하였으나 클릭${sopoClkSingle} 감소하여 CTR은 ${pct_str(ctCh)} 감소`;
+  } else {
+    if(ctrSame)   t+=`노출 감소 영향으로 클릭${sopoClkSingle} 감소하였으나 CTR은 ${prevStr()}과 유사한 수준으로 집행`;
+    else if(ctrUp) t+=`노출 감소 영향으로 클릭${sopoClkSingle} 감소하였으나 CTR은 ${pct_str(ctCh)} 개선`;
+    else           t+=`노출 감소 영향으로 클릭${sopoClkSingle} 감소하여 CTR은 ${pct_str(ctCh)} 감소`;
+  }
+  return t;
+}
+
+function genReview2(p,c){
+  const sesCh=pct(p.session,c.session), trxCh=pct(p.transaction,c.transaction);
+  const cvrCh=pct(p.cvr,c.cvr), roasCh=pct(p.roas,c.roas);
+  // CVR/ROAS 표현: 정확히 같으면 동일, %=0이면 유사, 아니면 증감
+  const cvrStr = p.cvr===c.cvr ? prevStr()+'과 동일' : cvrCh===0 ? `유사한 수준` : `${pct_str(cvrCh)} ${pW(cvrCh)}`;
+  const roasStr = p.roas===c.roas ? prevStr()+'과 동일' : roasCh===0 ? `유사한 수준` : `${pct_str(roasCh)} ${pW(roasCh)}`;
+  // 세션/전환 표현
+  const sesExact = p.session===c.session, trxExact = p.transaction===c.transaction;
+  const sesTxt = sesExact ? prevStr()+'과 동일' : sesCh===0 ? '유사한 수준' : sesCh>0 ? '증가' : '감소';
+  const trxTxt = trxExact ? prevStr()+'과 동일' : trxCh===0 ? '유사한 수준' : trxCh>0 ? '증가' : '감소';
+  let t;
+  if(sesCh<0&&trxCh<0)       t=`세션수·전환수 동반 감소하여 CVR ${cvrStr}, ROAS ${roasStr}`;
+  else if(sesCh<0&&trxCh>=0) t=`세션수 감소했으나 전환수 ${pct_str(trxCh)} ${trxTxt}하여 CVR ${cvrStr}, ROAS ${roasStr}`;
+  else if(sesCh>=0&&trxCh>=0) t=`세션수·전환수 동반 증가하여 CVR ${cvrStr}, ROAS ${roasStr}`;
+  else                        t=`세션수 증가했으나 전환수 ${pct_str(trxCh)} ${trxTxt}하여 CVR ${cvrStr}, ROAS ${roasStr}`;
+  return t;
+}
+
+function genGALine(prods, isSS, adP, adC){
+  if(isSS){
+    const diff=adC.transaction-adP.transaction;
+    const cvrCh=pct(adP.cvr,adC.cvr), roasCh=pct(adP.roas,adC.roas);
+    const diffStr = diff===0 ? prevStr()+'과 동일' : `${prevComp()} ${Math.abs(diff)}건 ${nW(diff)}`;
+    let prodTxt = '';
+    if(prods && prods.names && prods.names.length){
+      const suffix = prods.hasMore ? ' 등' : '';
+      prodTxt = ` [${prods.names.join(', ')}${suffix}] 제품에서 구매 발생.`;
+    }
+    return `GA 기준 전환 ${adC.transaction}건으로 ${diffStr}.${prodTxt} CVR ${ap(cvrCh)} ${pW(cvrCh)}, ROAS ${ap(roasCh)} ${pW(roasCh)}`;
+  }
+  if(!prods||!prods.names||!prods.names.length) return 'GA 기준 구매 발생하지 않음';
+  const suffix = prods.hasMore ? ' 등' : '';
+  return `GA 기준 [${prods.names.join(', ')}${suffix}] 제품에서 구매 발생`;
+}
+
+// ── BUILD REPORT DATA ──────────────────────────────────────────────────
+function buildRD(naverData, adData, gaData, saDates){
+  const allDates=new Set();
+  Object.values(adData).forEach(m=>Object.keys(m).forEach(d=>allDates.add(d)));
+  const dates=[...allDates].sort();
+  if(dates.length<1) throw new Error('광고주 리포트에서 날짜 데이터를 읽지 못했습니다');
+  if(dates.length<2) throw new Error('날짜가 1일치뿐입니다. 전일 데이터가 포함된 파일을 업로드해 주세요');
+  const [prev,curr]=dates.slice(-2);
+
+  const totP=calcTotal(adData,prev), totC=calcTotal(adData,curr);
+
+  // GA 날짜는 GA 파일 자체 기준으로 매핑 (adData 날짜와 달라도 순서로 매칭)
+  const gaDts = gaData.dates || [];
+  const gaPrev = gaDts.length>=2 ? gaDts[gaDts.length-2] : prev;
+  const gaCurr = gaDts.length>=1 ? gaDts[gaDts.length-1] : curr;
+  const sigP=calcSignups(gaData.signups[gaPrev]||{}), sigC=calcSignups(gaData.signups[gaCurr]||{});
+  const tops=topOverall(gaData.totalProd, gaCurr);
+
+  const mList=['네이버 SA','네이버 BS','구글 SA','구글 PMAX','네이버 SS'];
+  const media={};
+  for(const mn of mList){
+    const gk=GA_KEY[mn];
+    media[mn]={
+      adP:(adData[mn]||{})[prev]||empty(),
+      adC:(adData[mn]||{})[curr]||empty(),
+      csvP: mn==='네이버 SA'?(naverData.sa[prev]||empty()):mn==='네이버 SS'?(naverData.ss[prev]||empty()):empty(),
+      csvC: mn==='네이버 SA'?(naverData.sa[curr]||empty()):mn==='네이버 SS'?(naverData.ss[curr]||empty()):empty(),
+      sigP:sigP[mn]||0, sigC:sigC[mn]||0,
+      prods:top3(gaData.products,gk,gaCurr),
+    };
+  }
+
+  // dateDisp 계산
+  let dateDisp;
+  if(REPORT_MODE==='weekly'){
+    // saDates 전체에서 전주/금주 범위 분리
+    const half = Math.floor(saDates.length/2);
+    const currSA = saDates.slice(half);       // 금주 SA 날짜들
+    if(currSA.length >= 2){
+      const d1=currSA[0], d2=currSA[currSA.length-1];
+      const m1=parseInt(d1.substring(4,6)), day1=parseInt(d1.substring(6,8));
+      const m2=parseInt(d2.substring(4,6)), day2=parseInt(d2.substring(6,8));
+      dateDisp = `주간 (${m1}/${day1}~${m2}/${day2})`;
+    } else {
+      // 직접 입력값 사용
+      const cS=(document.getElementById('curr-start')?.value||'').trim();
+      const cE=(document.getElementById('curr-end')?.value||'').trim();
+      dateDisp = (cS&&cE) ? `주간 (${cS}~${cE})` : curr;
+    }
+  } else {
+    dateDisp = dispDate(curr);
+  }
+  return {prev,curr,dateDisp,saDates,totP,totC,sigP:sigP.total,sigC:sigC.total,tops,media};
+}
+
+// ── RENDER PREVIEW ─────────────────────────────────────────────────────
+function renderPreview(rd){
+  const {totP,totC,sigP,sigC,tops,media}=rd;
+  const sigCh=pct(sigP,sigC);
+  const cvrC=(totC.cvr*100).toFixed(2), cvrCh=pct(totP.cvr,totC.cvr);
+  const roasC=fmt(Math.round(totC.roas*100)), roasCh=pct(totP.roas,totC.roas);
+
+  // 주간 모드: 액션 입력이 리뷰보다 위로 오도록 DOM 재배치
+  if(REPORT_MODE==='weekly'){
+    const sections_reorder = [
+      {review:'tx-overall-review', label:document.getElementById('tx-overall-review')?.nextElementSibling, area:document.getElementById('ac-overall')},
+      {review:'tx-sa-review',      label:document.getElementById('tx-sa-top')?.nextElementSibling,    area:document.getElementById('ac-sa')},
+      {review:'tx-bs-review',      label:document.getElementById('tx-bs-top')?.nextElementSibling,    area:document.getElementById('ac-bs')},
+      {review:'tx-gsa-review',     label:document.getElementById('tx-gsa-top')?.nextElementSibling,   area:document.getElementById('ac-gsa')},
+      {review:'tx-pmax-review',    label:document.getElementById('tx-pmax-top')?.nextElementSibling,  area:document.getElementById('ac-pmax')},
+      {review:'tx-ss-top',         label:document.getElementById('tx-ss-top')?.nextElementSibling,    area:document.getElementById('ac-ss')},
+    ];
+    for(const {review, label, area} of sections_reorder){
+      const reviewEl = document.getElementById(review);
+      if(reviewEl && label && area){
+        const parent = reviewEl.parentElement;
+        parent.insertBefore(label, reviewEl);
+        parent.insertBefore(area, reviewEl);
+      }
+    }
+  }
+
+  document.getElementById('tx-overall-review').textContent=genOverallReview(totP,totC);
+  document.getElementById('tx-overall-ga').textContent=
+    REPORT_MODE==='weekly'
+      ? genOverallGA(tops)
+      : genOverallGA(tops)+'\n'+
+        `${sigCh===0?`회원가입 수 ${sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${sigP}→${sigC}건으로 ${prevComp()} ${pct_str(sigCh)} ${nW(sigCh)}`}\nCVR ${cvrC}% (${ap(cvrCh)}), ROAS ${roasC}% (${ap(roasCh)})`;
+
+  const sections=[
+    {id:'sa',mn:'네이버 SA',isBS:false,isSS:false},
+    {id:'bs',mn:'네이버 BS',isBS:true, isSS:false},
+    {id:'gsa',mn:'구글 SA', isBS:false,isBS:false,isGSA:true},
+    {id:'pmax',mn:'구글 PMAX',isBS:false,isGSA:false},
+    {id:'ss', mn:'네이버 SS',isBS:false,isGSA:false,isSSec:true},
+  ];
+
+  for(const {id,mn,isBS,isSSec} of sections){
+    const m=media[mn];
+    const sCh=pct(m.sigP,m.sigC);
+    const cvrMC=(m.adC.cvr*100).toFixed(2), cvrMCh=pct(m.adP.cvr,m.adC.cvr);
+    const roasMC=fmt(Math.round(m.adC.roas*100)), roasMCh=pct(m.adP.roas,m.adC.roas);
+
+    document.getElementById(`tx-${id}-top`).textContent=
+      REPORT_MODE==='weekly' ? '' :
+      `${sCh===0?`회원가입 수 ${m.sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${m.sigP}→${m.sigC}건으로 ${prevComp()} ${pct_str(sCh)} ${nW(sCh)}`}\nCVR ${cvrMC}% (${ap(cvrMCh)}), ROAS ${roasMC}% (${ap(roasMCh)})`;
+
+    let after;
+    if(isSSec){
+      const impC=m.csvC.impressions||m.adC.impressions, clkC=m.csvC.clicks||m.adC.clicks;
+      const ctCh=pct(m.csvP.ctr||m.adP.ctr, m.csvC.ctr||m.adC.ctr);
+      after=`노출 ${fmt(impC)}건, 클릭 ${fmt(clkC)}건 발생. ${prevComp()} CTR ${pct_str(ctCh)} ${pW(ctCh)}\n`+
+            genGALine(m.prods,true,m.adP,m.adC);
+    } else {
+      after=genReview1(m.csvP,m.csvC,m.adP,m.adC,isBS)+'\n'+
+            genReview2(m.adP,m.adC)+'\n'+
+            genGALine(m.prods,false,m.adP,m.adC);
+    }
+    document.getElementById(`tx-${id}-review`).textContent=after;
+  }
+
+  // 주간 하단 보고
+  if(REPORT_MODE==='weekly'){
+    document.getElementById('weekly-bottom').style.display='block';
+    renderWeeklyBottom(rd);
+  } else {
+    document.getElementById('weekly-bottom').style.display='none';
+  }
+}
+
+function renderWeeklyBottom(rd){
+  const {totP,totC,sigP,sigC,media} = rd;
+  const sigCh=pct(sigP,sigC);
+
+  // SA 전체
+  const cvrC=((totC.cvr||0)*100).toFixed(2), cvrCh=pct(totP.cvr,totC.cvr);
+  const roasC=fmt(Math.round(totC.roas*100)), roasCh=pct(totP.roas,totC.roas);
+  document.getElementById('tx-weekly-overall').textContent=
+    `${sigCh===0?`회원가입 수 ${sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${sigP}→${sigC}건으로 ${prevComp()} ${pct_str(sigCh)} ${nW(sigCh)}`}
+CVR ${cvrC}% (${ap(cvrCh)}), ROAS ${roasC}% (${ap(roasCh)})`;
+
+  // 각 매체
+  const mOrder=[
+    {id:'weekly-sa',  mn:'네이버 SA'},
+    {id:'weekly-bs',  mn:'네이버 BS'},
+    {id:'weekly-gsa', mn:'구글 SA'},
+    {id:'weekly-pmax',mn:'구글 PMAX'},
+    {id:'weekly-ss',  mn:'네이버 SS'},
+  ];
+  for(const {id,mn} of mOrder){
+    const m=media[mn];
+    if(!m) continue;
+    const sCh=pct(m.sigP,m.sigC);
+    const cvrMC=((m.adC.cvr||0)*100).toFixed(2), cvrMCh=pct(m.adP.cvr,m.adC.cvr);
+    const roasMC=fmt(Math.round(m.adC.roas*100)), roasMCh=pct(m.adP.roas,m.adC.roas);
+    document.getElementById(`tx-${id}`).textContent=
+      `${sCh===0?`회원가입 수 ${m.sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${m.sigP}→${m.sigC}건으로 ${prevComp()} ${pct_str(sCh)} ${nW(sCh)}`}
+CVR ${cvrMC}% (${ap(cvrMCh)}), ROAS ${roasMC}% (${ap(roasMCh)})`;
+  }
+  // 6. 쇼핑검색 - 데이터 없음
+  document.getElementById('tx-weekly-nss').textContent='';
+}
+
+// ── MAIN GENERATE ──────────────────────────────────────────────────────
+async function generate(){
+  hideErr();
+  const nickname = (document.getElementById('nickname-input')?.value||'').trim();
+  if(!nickname){ showErr('닉네임을 입력해야 리포트를 생성할 수 있습니다'); document.getElementById('nickname-input')?.focus(); return; }
+  try{
+    const [saText,adBuf,gaBuf]=await Promise.all([
+      readF(fls.sa,'text'), readF(fls.ad,'ab'), readF(fls.ga,'ab')
+    ]);
+    const naverData=parseNaverSA(saText);
+    const adData=parseAdReport(new Uint8Array(adBuf));
+    const gaData=parseGA(new Uint8Array(gaBuf));
+    RD=buildRD(naverData,adData,gaData,fileDates.sa||[]);
+    renderPreview(RD);
+    document.getElementById('report-section').style.display='block';
+    document.getElementById('report-section').scrollIntoView({behavior:'smooth'});
+  } catch(e){
+    showErr('오류: '+e.message);
+    console.error(e);
+  }
+}
+
+function readF(file,type){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=e=>res(e.target.result); r.onerror=rej;
+    if(type==='text') r.readAsText(file,'UTF-8');
+    else r.readAsArrayBuffer(file);
+  });
+}
+
+// ── DOCX GENERATION ───────────────────────────────────────────────────
+const RPR=`<w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕" w:cs="맑은 고딕"/><w:sz w:val="22"/><w:szCs w:val="22"/>`;
+const xe=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function xp(text){
+  return `<w:p><w:pPr><w:spacing w:after="160"/><w:rPr>${RPR}</w:rPr></w:pPr>`+
+         `<w:r><w:rPr>${RPR}</w:rPr><w:t xml:space="preserve">${xe(text)}</w:t></w:r></w:p>`;
+}
+function xpe(){ return `<w:p><w:pPr><w:spacing w:after="160"/><w:rPr>${RPR}</w:rPr></w:pPr></w:p>`; }
+function xpbr(parts){
+  const runs=parts.map((t,i)=>{
+    const br=i<parts.length-1?'<w:br/>':'';
+    return `<w:r><w:rPr>${RPR}</w:rPr><w:t xml:space="preserve">${xe(t)}</w:t>${br}</w:r>`;
+  }).join('');
+  return `<w:p><w:pPr><w:spacing w:after="160"/><w:rPr>${RPR}</w:rPr></w:pPr>${runs}</w:p>`;
+}
+function actionParas(text, prefix='액션: '){
+  const lines=(text||'').split('\n').map(l=>l.trim()).filter(l=>l);
+  if(!lines.length) return xp(prefix);
+  return xp(prefix+lines[0])+lines.slice(1).map(l=>xp(l)).join('');
+}
+
+function buildDocxBody(rd, actions){
+  const {totP,totC,sigP,sigC,tops,media,dateDisp}=rd;
+  const sigCh=pct(sigP,sigC);
+  const cvrC=(totC.cvr*100).toFixed(2), cvrCh=pct(totP.cvr,totC.cvr);
+  const roasC=fmt(Math.round(totC.roas*100)), roasCh=pct(totP.roas,totC.roas);
+
+  let b='';
+  // Overall
+  b+=xp(`[${dateDisp} GA4 업데이트 미완료]`);
+  b+=xpe();
+  b+=xp('SA');
+  b+=actionParas(actions.overall);
+  b+=xp(genOverallReview(totP,totC));
+  b+=xpbr([genOverallGA(tops),'']);
+  if(REPORT_MODE!=='weekly') b+=xpbr([`${sigCh===0?`회원가입 수 ${sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${sigP}→${sigC}건으로 ${prevComp()} ${pct_str(sigCh)} ${nW(sigCh)}`} `,`CVR ${cvrC}% (${ap(cvrCh)}), ROAS ${roasC}% (${ap(roasCh)})`]);
+  b+=xpe();
+
+  const order=[
+    {key:'overall',mn:'네이버 SA',label:'1. 네이버 SA',isBS:false,isSSec:false,ac:'sa'},
+    {key:'bs',     mn:'네이버 BS',label:'2. 네이버 BS',isBS:true, isSSec:false,ac:'bs'},
+    {key:'gsa',    mn:'구글 SA',  label:'3. 구글 SA',  isBS:false,isSSec:false,ac:'gsa'},
+    {key:'pmax',   mn:'구글 PMAX',label:'4. 구글 PMAX',isBS:false,isSSec:false,ac:'pmax'},
+    {key:'ss',     mn:'네이버 SS',label:'5. 네이버 SS', isBS:false,isSSec:true, ac:'ss'},
+  ];
+
+  for(const {mn,label,isBS,isSSec,ac} of order){
+    const m=media[mn];
+    const sCh=pct(m.sigP,m.sigC);
+    const cvrMC=(m.adC.cvr*100).toFixed(2), cvrMCh=pct(m.adP.cvr,m.adC.cvr);
+    const roasMC=fmt(Math.round(m.adC.roas*100)), roasMCh=pct(m.adP.roas,m.adC.roas);
+
+    b+=xp(label);
+    if(REPORT_MODE!=='weekly') b+=xp(`${sCh===0?`회원가입 수 ${m.sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${m.sigP}→${m.sigC}건으로 ${prevComp()} ${pct_str(sCh)} ${nW(sCh)}`}`);
+    b+=xp(`CVR ${cvrMC}% (${ap(cvrMCh)}), ROAS ${roasMC}% (${ap(roasMCh)})`);
+
+    if(!isSSec){
+      b+=actionParas(actions[ac]);
+      b+=xp(genReview1(m.csvP,m.csvC,m.adP,m.adC,isBS));
+      b+=xpe();
+      b+=xp(genReview2(m.adP,m.adC));
+      b+=xpe();
+      b+=xp(genGALine(m.prods,false,m.adP,m.adC));
+    } else {
+      const impC=m.csvC.impressions||m.adC.impressions, clkC=m.csvC.clicks||m.adC.clicks;
+      const ctCh=pct(m.csvP.ctr||m.adP.ctr, m.csvC.ctr||m.adC.ctr);
+      b+=xp(`노출 ${fmt(impC)}건, 클릭 ${fmt(clkC)}건 발생. ${prevComp()} CTR ${pct_str(ctCh)} ${pW(ctCh)}`);
+      b+=actionParas(actions[ac]);
+      b+=xpe();
+      b+=xp(genGALine(null,true,m.adP,m.adC));
+    }
+    b+=xpe();
+  }
+  // 6. 네이버 쇼핑검색
+  if(actions.nss && actions.nss.trim()){
+    b+=xp('6. 네이버 쇼핑검색');
+    actions.nss.split('\n').filter(l=>l.trim()).forEach(l=>{ b+=xp(l.trim()); });
+    b+=xpe();
+  }
+
+  // ── 주간 하단 보고 ──────────────────────────────
+  if(REPORT_MODE==='weekly'){
+    b+=xpe();
+
+    // SA 전체
+    const {totP,totC,sigP,sigC,media}=rd;
+    const sigCh=pct(sigP,sigC);
+    const cvrC=((totC.cvr||0)*100).toFixed(2), cvrCh=pct(totP.cvr,totC.cvr);
+    const roasC=fmt(Math.round(totC.roas*100)), roasCh=pct(totP.roas,totC.roas);
+    b+=xp('SA');
+    b+=xpbr([
+      `${sigCh===0?`회원가입 수 ${sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${sigP}→${sigC}건으로 ${prevComp()} ${pct_str(sigCh)} ${nW(sigCh)}`} `,
+      `CVR ${cvrC}% (${ap(cvrCh)}), ROAS ${roasC}% (${ap(roasCh)})`
+    ]);
+    b+=xpe();
+
+    // 매체별
+    const wOrder=[
+      {num:'1',mn:'네이버 SA',  ac:'weekly-sa'},
+      {num:'2',mn:'네이버 BS',  ac:'weekly-bs'},
+      {num:'3',mn:'구글 SA',    ac:'weekly-gsa'},
+      {num:'4',mn:'구글 PMAX',  ac:'weekly-pmax'},
+      {num:'5',mn:'네이버 SS',  ac:'weekly-ss'},
+    ];
+    for(const {num,mn,ac} of wOrder){
+      const m=media[mn]; if(!m) continue;
+      const sCh=pct(m.sigP,m.sigC);
+      const cvrMC=((m.adC.cvr||0)*100).toFixed(2), cvrMCh=pct(m.adP.cvr,m.adC.cvr);
+      const roasMC=fmt(Math.round(m.adC.roas*100)), roasMCh=pct(m.adP.roas,m.adC.roas);
+      b+=xp(`${num}. ${mn}`);
+      b+=xpbr([
+        `${sCh===0?`회원가입 수 ${m.sigC}건으로 ${prevStr()}과 동일`:`회원가입 수 ${m.sigP}→${m.sigC}건으로 ${prevComp()} ${pct_str(sCh)} ${nW(sCh)}`} `,
+        `CVR ${cvrMC}% (${ap(cvrMCh)}), ROAS ${roasMC}% (${ap(roasMCh)})`
+      ]);
+      const acTxt=(actions[ac]||'').trim();
+      if(acTxt) acTxt.split('\n').filter(l=>l.trim()).forEach(l=>{ b+=xp('ㄴ '+l.trim()); });
+      b+=xpe();
+    }
+    // 6. 쇼핑검색
+    const nssAc=(actions['weekly-nss']||'').trim();
+    if(nssAc){
+      b+=xp('6. 쇼핑검색');
+      nssAc.split('\n').filter(l=>l.trim()).forEach(l=>{ b+=xp('ㄴ '+l.trim()); });
+      b+=xpe();
+    }
+  }
+
+  return b;
+}
+
+async function downloadDocx(){
+  if(!RD){ alert('먼저 리포트를 생성해주세요'); return; }
+  const nickname = (document.getElementById('nickname-input')?.value||'').trim();
+  if(!nickname){ alert('닉네임을 입력해야 다운로드할 수 있습니다'); document.getElementById('nickname-input')?.focus(); return; }
+  const actions={
+    overall:document.getElementById('ac-overall').value,
+    sa:document.getElementById('ac-sa').value,
+    bs:document.getElementById('ac-bs').value,
+    gsa:document.getElementById('ac-gsa').value,
+    pmax:document.getElementById('ac-pmax').value,
+    ss:document.getElementById('ac-ss').value,
+    nss:document.getElementById('ac-nss').value,
+    'weekly-sa':  document.getElementById('ac-weekly-sa')?.value||'',
+    'weekly-bs':  document.getElementById('ac-weekly-bs')?.value||'',
+    'weekly-gsa': document.getElementById('ac-weekly-gsa')?.value||'',
+    'weekly-pmax':document.getElementById('ac-weekly-pmax')?.value||'',
+    'weekly-ss':  document.getElementById('ac-weekly-ss')?.value||'',
+    'weekly-nss': document.getElementById('ac-weekly-nss')?.value||'',
+  };
+
+  const body=buildDocxBody(RD,actions);
+  const docXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14 w15">
+<w:body>
+${body}
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>
+</w:body>
+</w:document>`;
+
+  const zip=new JSZip();
+  zip.file('[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`+
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n`+
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n`+
+    `<Default Extension="xml" ContentType="application/xml"/>\n`+
+    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>\n`+
+    `</Types>`);
+  zip.file('_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n`+
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>\n`+
+    `</Relationships>`);
+  zip.file('word/document.xml', docXml);
+  zip.file('word/_rels/document.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`);
+
+  const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const mo=RD.curr.substring(4,6), da=RD.curr.substring(6,8);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`데일리리포트_${mo}${da}.docx`;
+  a.click(); URL.revokeObjectURL(a.href);
+  await saveReportToHistory(blob, RD, actions);
+}
+
+
+
+// ── 공유 기록 (JSONBin.io) ─────────────────────────────
+const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
+let currentDetailKey = null;
+
+function getApiKey(){ return '$2a$10$lfHWk.1FQmse.eu4tbOa.utK4bYATJ0JZ2r0VN01bgJSomy.2s6ja'; }
+function getIndexBinId(){ return localStorage.getItem('jsonbinIndexId')||''; }
+
+// 페이지 로드 시 캐시 복원
+window.addEventListener('DOMContentLoaded', ()=>{
+  const nick = localStorage.getItem('reportNickname');
+  if(nick){ const el=document.getElementById('nickname-input'); if(el) el.value=nick; }
+  document.getElementById('nickname-input')?.addEventListener('input', function(){
+    localStorage.setItem('reportNickname', this.value);
+  });
+
+});
+
+
+
+// JSONBin 헤더
+function jbHeaders(withContent=false){
+  const h = { 'X-Master-Key': getApiKey() };
+  if(withContent) h['Content-Type']='application/json';
+  return h;
+}
+
+// 인덱스 빈 가져오기 (없으면 생성)
+async function getOrCreateIndex(){
+  let binId = getIndexBinId();
+  if(binId){
+    const r = await fetch(`${JSONBIN_BASE}/b/${binId}/latest`,{ headers: jbHeaders() });
+    if(r.ok){ const d=await r.json(); return { binId, records: d.record.records||[] }; }
+  }
+  // 새로 생성
+  const r = await fetch(`${JSONBIN_BASE}/b`,{
+    method:'POST', headers:{...jbHeaders(true),'X-Bin-Name':'report-index','X-Bin-Private':'false'},
+    body: JSON.stringify({records:[]})
+  });
+  if(!r.ok) throw new Error('인덱스 빈 생성 실패: '+(await r.text()));
+  const d = await r.json();
+  binId = d.metadata.id;
+  localStorage.setItem('jsonbinIndexId', binId);
+  return { binId, records:[] };
+}
+
+// 인덱스 저장
+async function saveIndex(binId, records){
+  await fetch(`${JSONBIN_BASE}/b/${binId}`,{
+    method:'PUT', headers:jbHeaders(true),
+    body: JSON.stringify({records})
+  });
+}
+
+// 리포트 기록 저장
+async function saveReportToHistory(docxBlob, rd, actions){
+  const apiKey = getApiKey();
+  if(!apiKey){ console.warn('API Key 없음, 기록 저장 생략'); return; }
+  const nickname = (document.getElementById('nickname-input')?.value||'').trim();
+  if(!nickname) return;
+
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  let period='';
+  if(REPORT_MODE==='weekly'){
+    const pS=document.getElementById('prev-start')?.value||'';
+    const pE=document.getElementById('prev-end')?.value||'';
+    const cS=document.getElementById('curr-start')?.value||'';
+    const cE=document.getElementById('curr-end')?.value||'';
+    period=`${pS}~${pE} → ${cS}~${cE}`;
+  } else { period=rd.dateDisp||''; }
+
+  // docx → base64
+  const buf = await docxBlob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
+  const base64=btoa(bin);
+
+  // 텍스트 수집
+  const sMap={'tx-overall-review':'전체 리뷰','tx-overall-ga':'전체 GA','tx-sa-top':'1.네이버SA 상단','tx-sa-review':'1.네이버SA 리뷰','tx-bs-top':'2.네이버BS 상단','tx-bs-review':'2.네이버BS 리뷰','tx-gsa-top':'3.구글SA 상단','tx-gsa-review':'3.구글SA 리뷰','tx-pmax-top':'4.PMAX 상단','tx-pmax-review':'4.PMAX 리뷰','tx-ss-top':'5.네이버SS 상단','tx-ss-review':'5.네이버SS 리뷰','tx-weekly-overall':'하단·전체','tx-weekly-sa':'하단·네이버SA','tx-weekly-bs':'하단·네이버BS','tx-weekly-gsa':'하단·구글SA','tx-weekly-pmax':'하단·PMAX','tx-weekly-ss':'하단·네이버SS'};
+  const aMap={'ac-overall':'액션·전체','ac-sa':'액션·네이버SA','ac-bs':'액션·네이버BS','ac-gsa':'액션·구글SA','ac-pmax':'액션·PMAX','ac-ss':'액션·네이버SS','ac-nss':'액션·쇼핑검색','ac-weekly-sa':'하단액션·네이버SA','ac-weekly-bs':'하단액션·네이버BS','ac-weekly-gsa':'하단액션·구글SA','ac-weekly-pmax':'하단액션·PMAX','ac-weekly-ss':'하단액션·네이버SS','ac-weekly-nss':'하단액션·쇼핑검색'};
+  let textBody='';
+  for(const [id,label] of Object.entries(sMap)){ const el=document.getElementById(id); if(el?.textContent?.trim()) textBody+=`[${label}]\n${el.textContent.trim()}\n\n`; }
+  for(const [id,label] of Object.entries(aMap)){ const el=document.getElementById(id); if(el?.value?.trim()) textBody+=`[${label}]\n${el.value.trim()}\n\n`; }
+
+  const fname=`${REPORT_MODE==='weekly'?'주간':'데일리'}_${nickname}_${period||dateStr}.docx`;
+
+  try {
+    // 리포트 빈 생성
+    const rr = await fetch(`${JSONBIN_BASE}/b`,{
+      method:'POST',
+      headers:{...jbHeaders(true),'X-Bin-Name':`rpt-${Date.now()}`,'X-Bin-Private':'false'},
+      body: JSON.stringify({nickname,savedAt:dateStr,mode:REPORT_MODE,period,filename:fname,textBody:textBody.trim(),docxBase64:base64})
+    });
+    if(!rr.ok) throw new Error(await rr.text());
+    const rd2 = await rr.json();
+    const rptBinId = rd2.metadata.id;
+
+    // 인덱스 업데이트
+    const {binId:idxBinId, records} = await getOrCreateIndex();
+    records.unshift({binId:rptBinId,nickname,savedAt:dateStr,mode:REPORT_MODE,period,filename:fname});
+    if(records.length>50) records.splice(50);
+    await saveIndex(idxBinId, records);
+
+    console.log('기록 저장 완료');
+  } catch(e){ console.error('기록 저장 실패', e); }
+}
+
+async function openHistory(){
+  document.getElementById('history-modal').style.display='block';
+  await loadHistory();
+}
+function closeHistory(){ document.getElementById('history-modal').style.display='none'; }
+
+async function loadHistory(){
+  const apiKey = getApiKey();
+  document.getElementById('history-loading').style.display='block';
+  document.getElementById('history-list').style.display='none';
+  document.getElementById('history-empty').style.display='none';
+
+  if(!apiKey){
+    document.getElementById('history-loading').textContent='⚠️ API Key를 먼저 설정해주세요';
+    return;
+  }
+  try{
+    const {records} = await getOrCreateIndex();
+    if(!records.length){ document.getElementById('history-loading').style.display='none'; document.getElementById('history-empty').style.display='block'; return; }
+    document.getElementById('history-list').innerHTML = records.map(item=>`
+      <div onclick="openDetail('${item.binId}')"
+        style="padding:14px 16px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;cursor:pointer;"
+        onmouseover="this.style.background='var(--accent-bg)'" onmouseout="this.style.background='transparent'">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <span style="font-size:13px;font-weight:700;color:var(--heading);">${item.mode==='weekly'?'📆':'📅'} ${item.nickname}</span>
+            <span style="font-size:12px;color:var(--accent);margin-left:10px;">${item.period||''}</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-dim);">${item.savedAt}</span>
+        </div>
+      </div>`).join('');
+    document.getElementById('history-loading').style.display='none';
+    document.getElementById('history-list').style.display='block';
+  } catch(e){ document.getElementById('history-loading').textContent='불러오기 실패: '+e.message; }
+}
+
+async function openDetail(binId){
+  currentDetailKey = binId;
+  try{
+    const r=await fetch(`${JSONBIN_BASE}/b/${binId}/latest`,{headers:jbHeaders()});
+    if(!r.ok) throw new Error(await r.text());
+    const d=await r.json();
+    const entry=d.record;
+    document.getElementById('detail-title').textContent=`${entry.mode==='weekly'?'📆 주간':'📅 일간'} · ${entry.nickname}`;
+    document.getElementById('detail-meta').textContent=`🕐 ${entry.savedAt}  |  📅 ${entry.period||''}  |  📄 ${entry.filename}`;
+    document.getElementById('detail-body').textContent=entry.textBody||'(내용 없음)';
+    document.getElementById('detail-redownload').onclick=()=>redownload(entry);
+    document.getElementById('detail-delete').onclick=()=>deleteHistoryItem(binId);
+    document.getElementById('history-detail-modal').style.display='block';
+  } catch(e){ alert('상세 불러오기 실패: '+e.message); }
+}
+function closeDetail(){ document.getElementById('history-detail-modal').style.display='none'; }
+
+function redownload(entry){
+  try{
+    const binary=atob(entry.docxBase64);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+    const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=entry.filename; a.click(); URL.revokeObjectURL(a.href);
+  } catch(e){ alert('재다운로드 실패: '+e.message); }
+}
+
+async function deleteHistoryItem(binId){
+  if(!confirm('이 기록을 삭제할까요?')) return;
+  try{
+    // 인덱스에서 제거
+    const {binId:idxBinId,records}=await getOrCreateIndex();
+    const updated=records.filter(r=>r.binId!==binId);
+    await saveIndex(idxBinId,updated);
+    // 빈 삭제
+    await fetch(`${JSONBIN_BASE}/b/${binId}`,{method:'DELETE',headers:jbHeaders()});
+    closeDetail(); await loadHistory();
+  } catch(e){ alert('삭제 실패: '+e.message); }
+}
+
+</script>
+
+<!-- ── 기록 모달 ── -->
+<div id="history-modal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.55); overflow-y:auto;">
+  <div style="max-width:800px; margin:40px auto; background:var(--surface); border-radius:16px; padding:28px; box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <div style="font-size:16px; font-weight:700; color:var(--heading);">📁 공유 기록</div>
+      <div style="display:flex; gap:8px;">
+        <button onclick="loadHistory()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; font-size:12px;">🔄 새로고침</button>
+        <button onclick="closeHistory()" style="padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; font-size:13px;">닫기</button>
+      </div>
+    </div>
+    <div id="history-loading" style="text-align:center; padding:30px; color:var(--text-dim); font-size:13px;">불러오는 중...</div>
+    <div id="history-list" style="display:none;"></div>
+    <div id="history-empty" style="display:none; text-align:center; color:var(--text-dim); padding:40px 0; font-size:13px;">저장된 기록이 없습니다</div>
+  </div>
+</div>
+
+<!-- ── 기록 상세 모달 ── -->
+<div id="history-detail-modal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.6); overflow-y:auto;">
+  <div style="max-width:720px; margin:40px auto; background:var(--surface); border-radius:16px; padding:28px; box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <div id="detail-title" style="font-size:15px; font-weight:700; color:var(--heading);"></div>
+      <div style="display:flex; gap:8px;">
+        <button id="detail-redownload" style="padding:6px 14px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; font-size:12px; font-weight:600;">📥 재다운로드</button>
+        <button id="detail-delete" style="padding:6px 12px; border-radius:8px; border:1px solid var(--danger); background:transparent; color:var(--danger); cursor:pointer; font-size:12px;">삭제</button>
+        <button onclick="closeDetail()" style="padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; font-size:12px;">닫기</button>
+      </div>
+    </div>
+    <div id="detail-meta" style="font-size:11px; color:var(--text-dim); margin-bottom:12px;"></div>
+    <div id="detail-body" style="font-size:12px; line-height:1.75; color:var(--text); white-space:pre-wrap; background:var(--bg); padding:16px; border-radius:10px; max-height:55vh; overflow-y:auto;"></div>
+  </div>
+</div>
+</body>
