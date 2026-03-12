@@ -163,7 +163,7 @@ if(sessionStorage.getItem('auth')==='1'){
   <header class="site-header">
     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
     <div>
-    <h1 id="main-title">데일리 리포트 생성기 <span style="font-size:11px; color:#6b7280; font-weight:400; vertical-align:middle;">v1.9</span></h1>
+    <h1 id="main-title">데일리 리포트 생성기 <span style="font-size:11px; color:#6b7280; font-weight:400; vertical-align:middle;">v2.0</span></h1>
     <p id="main-subtitle">파일 3개를 업로드하면 자동으로 데일리 리포트를 작성합니다</p>
     </div>
     <button onclick="openHistory()" style="margin-top:4px; padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">📁 기록 보기</button>
@@ -1450,8 +1450,11 @@ async function generateNSS(){
 
     // 미매칭 경고
     if(unmatchedCodes.length > 0){
-      document.getElementById('tx-nss-main').textContent +=
-        '\n\n⚠️ 인덱스 업데이트 필요: 매칭되지 않는 소재 있음\n' + unmatchedCodes.join('\n');
+      const el = document.getElementById('tx-nss-main');
+      el.innerHTML += `<div style="margin-top:12px; color:#dc2626; font-size:14px; font-weight:700; line-height:1.8;">
+⚠️ 인덱스 업데이트 필요: 매칭되지 않는 소재 있음<br>
+<span style="font-size:12px; font-weight:400;">${unmatchedCodes.join('<br>')}</span>
+</div>`;
     }
     document.getElementById('nss-report-section').style.display='block';
     document.getElementById('btn-gen').textContent = '리포트 생성하기';
@@ -1840,9 +1843,47 @@ async function downloadNSSExcel(){
   a.href=url; a.download=`쇼검데일리_${fileSuffix}.xlsx`;
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
+
+  // ── 기록 저장 ─────────────────────────────────────────────
+  await saveNSSToHistory(blob, `쇼검데일리_${fileSuffix}.xlsx`);
 }
 
-// ── 공유 기록 (JSONBin.io) ─────────────────────────────
+// ── NSS 엑셀 기록 저장 ────────────────────────────────────
+async function saveNSSToHistory(xlsxBlob, fname){
+  const apiKey = getApiKey();
+  if(!apiKey){ console.warn('API Key 없음, 기록 저장 생략'); return; }
+  const nickname = (document.getElementById('nickname-input')?.value||'').trim();
+  if(!nickname) return;
+
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const period = NSS_DATA?.dateLabel || '';
+
+  // xlsx → base64
+  const buf = await xlsxBlob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
+  const base64 = btoa(bin);
+
+  try {
+    const rr = await fetch(`${JSONBIN_BASE}/b`,{
+      method:'POST',
+      headers:{...jbHeaders(true),'X-Bin-Name':`rpt-${Date.now()}`,'X-Bin-Private':'false'},
+      body: JSON.stringify({nickname,savedAt:dateStr,mode:'nss_daily',period,filename:fname,textBody:'',xlsxBase64:base64})
+    });
+    if(!rr.ok) throw new Error(await rr.text());
+    const rd2 = await rr.json();
+    const rptBinId = rd2.metadata.id;
+
+    const {binId:idxBinId, records} = await getOrCreateIndex();
+    records.unshift({binId:rptBinId,nickname,savedAt:dateStr,mode:'nss_daily',period,filename:fname});
+    if(records.length>50) records.splice(50);
+    await saveIndex(idxBinId, records);
+    console.log('NSS 기록 저장 완료');
+  } catch(e){ console.error('NSS 기록 저장 실패', e); }
+}
+
+
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
 let currentDetailKey = null;
 
@@ -1982,7 +2023,8 @@ async function openDetail(binId){
     if(!r.ok) throw new Error(await r.text());
     const d=await r.json();
     const entry=d.record;
-    document.getElementById('detail-title').textContent=`${entry.mode==='weekly'?'📆 주간':'📅 일간'} · ${entry.nickname}`;
+    const modeLabel = entry.mode==='weekly'?'📆 주간': entry.mode==='nss_daily'?'🛒 쇼검데일리':'📅 일간';
+    document.getElementById('detail-title').textContent=`${modeLabel} · ${entry.nickname}`;
     document.getElementById('detail-meta').textContent=`🕐 ${entry.savedAt}  |  📅 ${entry.period||''}  |  📄 ${entry.filename}`;
     document.getElementById('detail-body').textContent=entry.textBody||'(내용 없음)';
     document.getElementById('detail-redownload').onclick=()=>redownload(entry);
@@ -1994,10 +2036,16 @@ function closeDetail(){ document.getElementById('history-detail-modal').style.di
 
 function redownload(entry){
   try{
-    const binary=atob(entry.docxBase64);
+    const isXlsx = entry.mode==='nss_daily' || entry.xlsxBase64;
+    const b64 = isXlsx ? entry.xlsxBase64 : entry.docxBase64;
+    if(!b64){ alert('저장된 파일 데이터가 없습니다.'); return; }
+    const binary=atob(b64);
     const bytes=new Uint8Array(binary.length);
     for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-    const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const mimeType = isXlsx
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const blob=new Blob([bytes],{type:mimeType});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=entry.filename; a.click(); URL.revokeObjectURL(a.href);
   } catch(e){ alert('재다운로드 실패: '+e.message); }
 }
@@ -2048,4 +2096,8 @@ async function deleteHistoryItem(binId){
     <div id="detail-body" style="font-size:12px; line-height:1.75; color:var(--text); white-space:pre-wrap; background:var(--bg); padding:16px; border-radius:10px; max-height:55vh; overflow-y:auto;"></div>
   </div>
 </div>
+<div style="text-align:center; padding:24px 0 12px; color:#d1d5db; font-size:10px; letter-spacing:0.05em; user-select:none;">
+  BSAD_이종성 작성
+</div>
+
 </body>
